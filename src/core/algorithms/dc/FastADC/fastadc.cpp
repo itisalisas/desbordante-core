@@ -1,24 +1,23 @@
-#include "algorithms/dc/FastADC/fastadc.h"
+#include "core/algorithms/dc/FastADC/fastadc.h"
 
 #include <stdexcept>
 #include <vector>
 
-#include <easylogging++.h>
-
-#include "config/names_and_descriptions.h"
-#include "config/option.h"
-#include "config/option_using.h"
-#include "config/tabular_data/input_table/option.h"
-#include "dc/FastADC/model/pli_shard.h"
-#include "dc/FastADC/util/approximate_evidence_inverter.h"
-#include "dc/FastADC/util/evidence_aux_structures_builder.h"
-#include "dc/FastADC/util/evidence_set_builder.h"
-#include "dc/FastADC/util/predicate_builder.h"
-#include "model/table/column_layout_typed_relation_data.h"
+#include "core/algorithms/dc/FastADC/model/pli_shard.h"
+#include "core/algorithms/dc/FastADC/util/approximate_evidence_inverter.h"
+#include "core/algorithms/dc/FastADC/util/evidence_aux_structures_builder.h"
+#include "core/algorithms/dc/FastADC/util/evidence_set_builder.h"
+#include "core/algorithms/dc/FastADC/util/predicate_builder.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option.h"
+#include "core/config/option_using.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/model/table/column_layout_typed_relation_data.h"
+#include "core/util/logger.h"
 
 namespace algos::dc {
 
-FastADC::FastADC() : Algorithm({}) {
+FastADC::FastADC() : Algorithm() {
     pred_index_provider_ = std::make_shared<PredicateIndexProvider>();
     RegisterOptions();
     MakeOptionsAvailable({config::kTableOpt.GetName()});
@@ -36,13 +35,26 @@ void FastADC::RegisterOptions() {
     RegisterOption(
             Option{&comparable_threshold_, kComparableThreshold, kDComparableThreshold, 0.1});
     RegisterOption(Option{&evidence_threshold_, kEvidenceThreshold, kDEvidenceThreshold, 0.01});
+    RegisterOption(Option{&threads_, kThreads, kDThreads, 1U});
 }
 
 void FastADC::MakeExecuteOptsAvailable() {
     using namespace config::names;
 
     MakeOptionsAvailable({kShardLength, kAllowCrossColumns, kMinimumSharedValue,
-                          kComparableThreshold, kEvidenceThreshold});
+                          kComparableThreshold, kEvidenceThreshold, kThreads});
+}
+
+util::WorkerThreadPool* FastADC::GetThreadPool() {
+    if (threads_ <= 1) {
+        thread_pool_.reset();
+        return nullptr;
+    }
+
+    if (!thread_pool_ || thread_pool_->ThreadNum() != threads_) {
+        thread_pool_.emplace(threads_);
+    }
+    return &*thread_pool_;
 }
 
 void FastADC::LoadDataInternal() {
@@ -75,11 +87,13 @@ void FastADC::CheckTypes() {
         model::TypedColumnData const& column = typed_relation_->GetColumnData(column_index);
         model::TypeId type_id = column.GetTypeId();
 
-        if (type_id == +model::TypeId::kMixed) {
-            LOG(WARNING) << "Column with index \"" + std::to_string(column_index) +
-                                    "\" contains values of different types. Those values will be "
-                                    "treated as strings.";
-        } else if (!column.IsNumeric() && type_id != +model::TypeId::kString) {
+        if (type_id == model::TypeId::kMixed) {
+            LOG_WARN(
+                    "Column with index \"{}\" contains values of different types. Those values "
+                    "will be "
+                    "treated as strings.",
+                    column_index);
+        } else if (!column.IsNumeric() && type_id != model::TypeId::kString) {
             throw std::invalid_argument(
                     "Column with index \"" + std::to_string(column_index) +
                     "\" is of unsupported type. Only numeric and string types are supported.");
@@ -94,14 +108,13 @@ void FastADC::CheckTypes() {
 }
 
 void FastADC::PrintResults() {
-    LOG(DEBUG) << "Total denial constraints: " << dcs_.TotalDCSize();
-    LOG(DEBUG) << "Minimal denial constraints: " << dcs_.MinDCSize();
-    LOG(DEBUG) << dcs_.ToString();
+    LOG_DEBUG("Total denial constraints: {}", dcs_.TotalDCSize());
+    LOG_DEBUG("Minimal denial constraints: {}", dcs_.MinDCSize());
+    LOG_DEBUG("{}", dcs_.ToString());
 }
 
-unsigned long long FastADC::ExecuteInternal() {
-    auto const start_time = std::chrono::system_clock::now();
-    LOG(DEBUG) << "Start";
+void FastADC::ExecuteInternal() {
+    LOG_DEBUG("Start");
 
     SetLimits();
     CheckTypes();
@@ -116,15 +129,14 @@ unsigned long long FastADC::ExecuteInternal() {
     EvidenceAuxStructuresBuilder evidence_aux_structures_builder(predicate_builder);
     evidence_aux_structures_builder.BuildAll();
 
-    EvidenceSetBuilder evidence_set_builder(pli_shard_builder.pli_shards,
-                                            evidence_aux_structures_builder.GetPredicatePacks());
+    util::WorkerThreadPool* thread_pool = GetThreadPool();
+    EvidenceSetBuilder evidence_set_builder(
+            pli_shard_builder.pli_shards, evidence_aux_structures_builder.GetPredicatePacks(),
+            evidence_aux_structures_builder.GetNumberOfBitsInClue(), thread_pool);
     evidence_set_builder.BuildEvidenceSet(evidence_aux_structures_builder.GetCorrectionMap(),
                                           evidence_aux_structures_builder.GetCardinalityMask());
 
-    LOG(DEBUG) << "Built evidence set";
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    LOG(DEBUG) << "Current time: " << elapsed_milliseconds.count();
+    LOG_DEBUG("Built evidence set");
 
     ApproxEvidenceInverter dcbuilder(predicate_builder, evidence_threshold_,
                                      std::move(evidence_set_builder.evidence_set),
@@ -133,11 +145,6 @@ unsigned long long FastADC::ExecuteInternal() {
     dcs_ = dcbuilder.BuildDenialConstraints();
 
     PrintResults();
-
-    elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    LOG(DEBUG) << "Algorithm time: " << elapsed_milliseconds.count();
-    return elapsed_milliseconds.count();
 }
 
 // TODO: mb make this a list?

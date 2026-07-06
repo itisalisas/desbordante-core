@@ -1,4 +1,4 @@
-#include "algorithms/ucc/hpivalid/hypergraph.h"
+#include "core/algorithms/ucc/hpivalid/hypergraph.h"
 
 // see algorithms/ucc/hpivalid/LICENSE
 
@@ -6,7 +6,7 @@ namespace algos::hpiv {
 
 Hypergraph::Hypergraph(Edge::size_type num_vertices) : num_vertices_(num_vertices), edges_() {}
 
-void Hypergraph::AddEdgeAndMinimizeInclusion(Edge const &new_edge) {
+void Hypergraph::AddEdgeAndMinimizeInclusion(Edge const& new_edge) {
     // is new_edge a supset of an edge in edges_?
     bool is_supset = false;
     // list of indices of supsets of new_edge from edges_ in descending order

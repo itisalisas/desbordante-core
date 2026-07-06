@@ -1,5 +1,4 @@
 #pragma once
-
 #include <compare>
 #include <list>
 #include <optional>
@@ -10,8 +9,9 @@
 
 #include <boost/test/tools/floating_point_comparison.hpp>
 
-#include "model/types/builtin.h"
-#include "model/types/double_type.h"
+#include "core/model/types/builtin.h"
+#include "core/model/types/double_type.h"
+#include "core/util/export.h"
 
 namespace model {
 
@@ -127,14 +127,26 @@ struct DFStringConstraint {
         s << column_name << " " << constraint.ToString();
         return s.str();
     }
+
+    std::string ToJSON() const {
+        std::stringstream s;
+        s << "{ \"column_name\": " << column_name << ", \"lower_bound\": " << constraint.lower_bound
+          << ", \"upper_bound\": " << constraint.upper_bound << "}";
+        return s.str();
+    }
 };
 
-struct DDString {
+struct DESBORDANTE_EXPORT DDString {
     std::list<DFStringConstraint> left;
     std::list<DFStringConstraint> right;
 
     std::string ToString() const {
         return DFToString(left) + " -> " + DFToString(right);
+    }
+
+    auto operator==(DDString const& other) const {
+        return std::ranges::is_permutation(left, other.left) &&
+               std::ranges::is_permutation(right, other.right);
     }
 
     std::string DFToString(std::list<DFStringConstraint> const& df) const {
@@ -147,6 +159,27 @@ struct DDString {
                 has_constraints = true;
             s << constraint.ToString();
         }
+        return s.str();
+    }
+
+    std::string ToJSON() const {
+        std::stringstream s;
+        auto dump_list = [&s](std::string_view const name,
+                              std::list<DFStringConstraint> const& xs) {
+            s << "\"" << name << "\":[";
+            bool first = true;
+            for (DFStringConstraint const& x : xs) {
+                if (!first) s << ",";
+                first = false;
+                s << x.ToJSON();
+            }
+            s << "]";
+        };
+        s << "{";
+        dump_list("left", left);
+        s << ",";
+        dump_list("right", right);
+        s << "}";
         return s.str();
     }
 };

@@ -1,8 +1,6 @@
-#include "partition_tidlist.h"
+#include "core/algorithms/cfd/model/partition_tidlist.h"
 
 namespace algos::cfd {
-
-int const PartitionTIdList::kSep = -1;
 
 bool PartitionTIdList::operator==(PartitionTIdList const& b) const {
     return sets_number == b.sets_number && tids == b.tids;

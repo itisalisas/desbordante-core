@@ -3,27 +3,26 @@
  *
  * Spider algorithm class methods definition
  */
-#include "spider.h"
+#include "core/algorithms/ind/spider/spider.h"
 
 #include <functional>
 #include <queue>
 #include <string>
 #include <type_traits>
 
-#include "attribute.h"
-#include "config/equal_nulls/option.h"
-#include "config/error/option.h"
-#include "config/mem_limit/option.h"
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/thread_number/option.h"
-#include "util/timed_invoke.h"
+#include "core/algorithms/ind/spider/attribute.h"
+#include "core/config/equal_nulls/option.h"
+#include "core/config/error/option.h"
+#include "core/config/mem_limit/option.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/thread_number/option.h"
 
 namespace algos {
 
 using AttributeIndex = spider::AttributeIndex;
 
-Spider::Spider() : INDAlgorithm({}) {
+Spider::Spider() : INDAlgorithm() {
     DESBORDANTE_OPTION_USING;
 
     RegisterOption(config::kEqualNullsOpt(&is_null_equal_null_));
@@ -43,10 +42,7 @@ void Spider::MakeExecuteOptsAvailable() {
 }
 
 void Spider::LoadINDAlgorithmDataInternal() {
-    auto const create_domains = [&] {
-        domains_ = model::ColumnDomain::CreateFrom(input_tables_, mem_limit_mb_, threads_num_);
-    };
-    timings_.load = util::TimedInvoke(create_domains);
+    domains_ = model::ColumnDomain::CreateFrom(input_tables_, mem_limit_mb_, threads_num_);
 }
 
 namespace {
@@ -121,16 +117,9 @@ void Spider::MineAINDs() {
     }
 }
 
-unsigned long long Spider::ExecuteInternal() {
+void Spider::ExecuteInternal() {
     auto const mining_func = (max_ind_error_ == 0) ? &Spider::MineINDs : &Spider::MineAINDs;
-    timings_.compute = util::TimedInvoke(mining_func, this);
-    timings_.total = timings_.load + timings_.compute;
-    return timings_.total;
-}
-
-void Spider::ResetINDAlgorithmState() {
-    timings_.compute = 0;
-    timings_.total = 0;
+    (this->*mining_func)();
 }
 
 }  // namespace algos

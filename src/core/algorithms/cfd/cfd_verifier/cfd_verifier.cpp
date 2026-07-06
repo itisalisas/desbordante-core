@@ -1,17 +1,15 @@
-#include "cfd_verifier.h"
+#include "core/algorithms/cfd/cfd_verifier/cfd_verifier.h"
 
-#include <easylogging++.h>
-
-#include "cfd/model/cfd_relation_data.h"
-#include "cfd/util/cfd_output_util.h"
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/tabular_data/input_table/option.h"
-#include "util/timed_invoke.h"
+#include "core/algorithms/cfd/model/cfd_relation_data.h"
+#include "core/algorithms/cfd/util/cfd_output_util.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/util/logger.h"
 
 namespace algos::cfd_verifier {
 
-CFDVerifier::CFDVerifier() : Algorithm({}) {
+CFDVerifier::CFDVerifier() : Algorithm() {
     RegisterOptions();
     MakeOptionsAvailable({config::kTableOpt.GetName()});
 }
@@ -51,8 +49,8 @@ void CFDVerifier::RegisterOptions() {
     RegisterOption(
             Option{&string_rule_right_, kCFDRuleRight, kDCFDRuleRight, CFDAttributeValuePair{}}
                     .SetValueCheck(validate_single_pair));
-    RegisterOption(Option{&minconf_, kMinimumConfidence, kDMinimumConfidence, 0.0});
-    RegisterOption(Option{&minsup_, kMinimumSupport, kDMinimumSupport, 0});
+    RegisterOption(Option{&minconf_, kCfdMinimumConfidence, kDCfdMinimumConfidence, 0.0});
+    RegisterOption(Option{&minsup_, kCfdMinimumSupport, kDCfdMinimumSupport, 0});
 }
 
 void CFDVerifier::LoadDataInternal() {
@@ -65,10 +63,10 @@ void CFDVerifier::LoadDataInternal() {
 
 void CFDVerifier::MakeExecuteOptsAvailable() {
     using namespace config::names;
-    MakeOptionsAvailable({kCFDRuleLeft, kCFDRuleRight, kMinimumSupport, kMinimumConfidence});
+    MakeOptionsAvailable({kCFDRuleLeft, kCFDRuleRight, kCfdMinimumSupport, kCfdMinimumConfidence});
 }
 
-unsigned long long CFDVerifier::ExecuteInternal() {
+void CFDVerifier::ExecuteInternal() {
     auto build_item_ids =
             [this](std::vector<CFDAttributeValuePair> const& rule_part) -> cfd::Itemset {
         cfd::Itemset item_ids;
@@ -90,16 +88,12 @@ unsigned long long CFDVerifier::ExecuteInternal() {
 
     cfd_ = {build_item_ids(string_rule_left_), build_item_ids({string_rule_right_}).front()};
 
-    LOG(DEBUG) << "Starting CFD verification...";
-    LOG(DEBUG) << "\tRule to verify: " << cfd::Output::CFDToString(cfd_, relation_);
+    LOG_DEBUG("Starting CFD verification...");
+    LOG_DEBUG("\tRule to verify: {}", cfd::Output::CFDToString(cfd_, relation_));
 
-    auto verification_time = ::util::TimedInvoke(&CFDVerifier::VerifyCFD, this);
-    LOG(DEBUG) << "CFD verification took " << std::to_string(verification_time) << "ms";
+    VerifyCFD();
 
-    auto stats_calculation_time = ::util::TimedInvoke(&CFDVerifier::CalculateStatistics, this);
-    LOG(DEBUG) << "Statistics calculation took " << std::to_string(stats_calculation_time) << "ms";
-
-    return verification_time + stats_calculation_time;
+    CalculateStatistics();
 }
 
 void CFDVerifier::VerifyCFD() {

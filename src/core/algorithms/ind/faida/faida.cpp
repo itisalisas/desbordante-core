@@ -1,18 +1,17 @@
-#include "faida.h"
+#include "core/algorithms/ind/faida/faida.h"
 
-#include <easylogging++.h>
-
-#include "algorithms/ind/faida/candidate_generation/apriori_candidate_generator.h"
-#include "algorithms/ind/faida/inclusion_testing/combined_inclusion_tester.h"
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/thread_number/option.h"
-#include "max_arity/option.h"
-#include "model/table/column.h"
+#include "core/algorithms/ind/faida/candidate_generation/apriori_candidate_generator.h"
+#include "core/algorithms/ind/faida/inclusion_testing/combined_inclusion_tester.h"
+#include "core/config/max_arity/option.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/thread_number/option.h"
+#include "core/model/table/column.h"
+#include "core/util/logger.h"
 
 namespace algos {
 
-Faida::Faida() : INDAlgorithm({}) {
+Faida::Faida() : INDAlgorithm() {
     DESBORDANTE_OPTION_USING;
 
     RegisterOption(Option{&sample_size_, kSampleSize, kDSampleSize, 500});
@@ -32,20 +31,11 @@ void Faida::MakeExecuteOptsAvailable() {
 }
 
 void Faida::LoadINDAlgorithmDataInternal() {
-    auto start_time = std::chrono::system_clock::now();
-
     data_ = faida::Preprocessor::CreateHashedStores("Faida", input_tables_, sample_size_);
-
-    auto const prep_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    prepr_time_ = prep_milliseconds.count();
-    LOG(DEBUG) << "Preprocessing time: " << prepr_time_;
 }
 
 void Faida::ResetINDAlgorithmState() {
     inclusion_tester_.reset();
-    insert_time_ = 0;
-    check_time_ = 0;
 }
 
 std::vector<std::shared_ptr<faida::SimpleCC>> Faida::CreateUnaryCCs(
@@ -59,11 +49,11 @@ std::vector<std::shared_ptr<faida::SimpleCC>> Faida::CreateUnaryCCs(
 
         for (ColumnIndex col_idx = 0; col_idx < num_columns; col_idx++) {
             if (ignore_const_cols_ && store.IsConstantCol(col_idx)) {
-                LOG(DEBUG) << "Ignoring constant column with idx " << col_idx;
+                LOG_DEBUG("Ignoring constant column with idx {}", col_idx);
                 continue;
             }
             if (ignore_null_cols_ && store.IsNullCol(col_idx)) {
-                LOG(DEBUG) << "Ignoring null column with idx " << col_idx;
+                LOG_DEBUG("Ignoring null column with idx {}", col_idx);
                 continue;
             }
             combinations.emplace_back(
@@ -100,8 +90,7 @@ std::vector<std::shared_ptr<faida::SimpleCC>> Faida::ExtractCCs(
     return {combinations.begin(), combinations.end()};
 }
 
-unsigned long long Faida::ExecuteInternal() {
-    auto start_time = std::chrono::system_clock::now();
+void Faida::ExecuteInternal() {
     size_t level_num = 0;
 
     inclusion_tester_ = std::make_unique<faida::CombinedInclusionTester>(
@@ -109,55 +98,44 @@ unsigned long long Faida::ExecuteInternal() {
 
     std::vector<std::shared_ptr<SimpleCC>> combinations = CreateUnaryCCs(*data_);
     std::vector<SimpleIND> candidates = CreateUnaryINDCandidates(combinations);
-    LOG(DEBUG) << "\nCreated " << candidates.size() << " candidates";
+    LOG_DEBUG("\nCreated {} candidates", candidates.size());
 
     faida::IInclusionTester::ActiveColumns active_columns = inclusion_tester_->SetCCs(combinations);
     InsertRows(active_columns, *data_);
 
     std::vector<SimpleIND> last_result = TestCandidates(candidates);
-    LOG(DEBUG) << "Found " << last_result.size() << " INDs on level " << level_num;
+    LOG_DEBUG("Found {} INDs on level {}", last_result.size(), level_num);
     RegisterInds(last_result);
 
     while (!last_result.empty() && ++level_num != max_arity_) {
         candidates = faida::apriori_candidate_generator::CreateCombinedCandidates(last_result);
         if (candidates.empty()) {
-            LOG(DEBUG) << "\nNo candidates on level " << level_num;
+            LOG_DEBUG("\nNo candidates on level {}", level_num);
             break;
         }
-        LOG(DEBUG) << "\nCreated " << candidates.size() << " candidates";
+        LOG_DEBUG("\nCreated {} candidates", candidates.size());
 
         /* All unique combinations on this level */
         combinations = ExtractCCs(candidates);
-        LOG(DEBUG) << "Extracted " << combinations.size() << " CCs";
+        LOG_DEBUG("Extracted {} CCs", combinations.size());
 
         active_columns = inclusion_tester_->SetCCs(combinations);
         InsertRows(active_columns, *data_);
 
         last_result = TestCandidates(candidates);
         RegisterInds(last_result);
-        LOG(DEBUG) << "Found " << last_result.size() << " INDs on level " << level_num;
+        LOG_DEBUG("Found {} INDs on level {}", last_result.size(), level_num);
     }
 
-    auto const elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    unsigned long long const millis = elapsed_milliseconds.count();
-
-    LOG(DEBUG) << "\nCertain checks:\t" << inclusion_tester_->GetNumCertainChecks();
-    LOG(DEBUG) << "Uncertain checks:\t" << inclusion_tester_->GetNumUncertainChecks();
-    LOG(DEBUG) << "\nOverall time\t" << millis + prepr_time_;
-    LOG(DEBUG) << "Time (without preprocessing):\t" << millis;
-    LOG(DEBUG) << "\tInserting:\t" << insert_time_;
-    LOG(DEBUG) << "\tChecking:\t" << check_time_;
-    LOG(DEBUG) << "\nIND count:\t" << INDList().size();
-
-    return millis;
+    LOG_DEBUG("\nCertain checks:\t{}", inclusion_tester_->GetNumCertainChecks());
+    LOG_DEBUG("Uncertain checks:\t{}", inclusion_tester_->GetNumUncertainChecks());
+    LOG_DEBUG("\nIND count:\t{}", INDList().size());
 }
 
 void Faida::InsertRows(faida::IInclusionTester::ActiveColumns const& active_columns,
                        faida::Preprocessor const& data) {
     using namespace faida;
     using std::vector;
-    auto start_time = std::chrono::system_clock::now();
 
     vector<AbstractColumnStore::HashedTableSample> samples;
     samples.reserve(data.GetStores().size());
@@ -179,19 +157,13 @@ void Faida::InsertRows(faida::IInclusionTester::ActiveColumns const& active_colu
             inclusion_tester_->InsertRows(next_block, block_size);
             row_idx += block_size;
         }
-        LOG(DEBUG) << "Inserted " << row_idx << " rows from table " << curr_table;
+        LOG_DEBUG("Inserted {} rows from table {}", row_idx, curr_table);
     }
 
     inclusion_tester_->FinalizeInsertion();
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    size_t const millis = elapsed_milliseconds.count();
-    insert_time_ += millis;
-    LOG(DEBUG) << "Insert rows time:\t" << millis;
 }
 
 std::vector<faida::SimpleIND> Faida::TestCandidates(std::vector<SimpleIND> const& candidates) {
-    auto start_time = std::chrono::system_clock::now();
     std::vector<SimpleIND> result;
 
     for (SimpleIND const& candidate_ind : candidates) {
@@ -200,11 +172,6 @@ std::vector<faida::SimpleIND> Faida::TestCandidates(std::vector<SimpleIND> const
         }
     }
 
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    size_t const millis = elapsed_milliseconds.count();
-    check_time_ += millis;
-    LOG(DEBUG) << "Candidates check time:\t" << millis;
     return result;
 }
 

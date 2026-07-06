@@ -10,10 +10,10 @@
 #include <variant>
 #include <vector>
 
-#include "model/index.h"
-#include "util/auto_join_thread.h"
-#include "util/barrier.h"
-#include "util/desbordante_assume.h"
+#include "core/model/index.h"
+#include "core/util/auto_join_thread.h"
+#include "core/util/barrier.h"
+#include "core/util/desbordante_assume.h"
 
 namespace util {
 class WorkerThreadPool {
@@ -162,6 +162,12 @@ public:
 
     ~WorkerThreadPool() {
         Terminate();
+        // Join workers before any other member is destroyed. Members are
+        // destroyed in reverse declaration order, so worker_threads_ would
+        // otherwise be destroyed AFTER working_mutex_/working_var_, allowing
+        // a worker that is still inside its unique_lock dtor to touch a
+        // destroyed mutex.
+        worker_threads_.clear();
     }
 };
 }  // namespace util

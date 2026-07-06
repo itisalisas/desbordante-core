@@ -1,12 +1,13 @@
 #pragma once
 
-#include <enum.h>
+#include <magic_enum/magic_enum.hpp>
+
+#include "core/util/export.h"
 
 namespace algos::cfd {
 
-// Defines what kind of lattice traversal will be used in pattern mining part of the algorithm.
-BETTER_ENUM(Substrategy, char,
-            dfs = 0,  // dfs lattice traversal
-            bfs       // bfs lattice traversal
-);
+enum class DESBORDANTE_EXPORT Substrategy : char {
+    kDfs = 0,  // dfs lattice traversal
+    kBfs       // bfs lattice traversal
+};
 }  // namespace algos::cfd

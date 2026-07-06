@@ -1,4 +1,4 @@
-#include "sampled_inverted_index.h"
+#include "core/algorithms/ind/faida/inclusion_testing/sampled_inverted_index.h"
 
 namespace algos::faida {
 
@@ -12,7 +12,7 @@ void SampledInvertedIndex::Init(std::vector<size_t> const& sampled_hashes, int m
     max_id_ = max_id;
 
     seen_cc_indices_ = boost::dynamic_bitset<>(max_id);
-    non_covered_cc_indices_ = atomicbitvector::atomic_bv_t(max_id);
+    non_covered_cc_indices_ = util::AtomicBitVector(max_id);
 
     discovered_inds_.clear();
 }

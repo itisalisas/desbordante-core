@@ -6,14 +6,17 @@
 #pragma once
 #include <vector>
 
-#include "algorithms/ind/ind_algorithm.h"
-#include "config/equal_nulls/type.h"
-#include "config/error/type.h"
-#include "config/mem_limit/type.h"
-#include "config/thread_number/type.h"
-#include "model/table/column_domain.h"
+#include "core/algorithms/ind/ind_algorithm.h"
+#include "core/config/equal_nulls/type.h"
+#include "core/config/error/type.h"
+#include "core/config/mem_limit/type.h"
+#include "core/config/thread_number/type.h"
+#include "core/model/table/column_domain.h"
 
 namespace algos {
+namespace cind {
+class CindAlgorithm;
+}  // namespace cind
 
 ///
 /// \brief disk-backed unary inclusion dependency mining algorithm
@@ -24,15 +27,6 @@ namespace algos {
 /// \note modification(2): algorithm mines AINDs (unary)
 ///
 class Spider final : public INDAlgorithm {
-public:
-    /// timing information for algorithm stages
-    struct StageTimings {
-        size_t load;    /**< time taken for the data loading */
-        size_t compute; /**< time taken for the inds computing */
-        size_t total;   /**< total time taken for all stages */
-    };
-
-private:
     /* configuration stage fields */
     config::EqNullsType is_null_equal_null_;
     config::ThreadNumType threads_num_;
@@ -41,7 +35,6 @@ private:
 
     /* execution stage fields */
     std::vector<model::ColumnDomain> domains_; /*< loaded data */
-    StageTimings timings_;                     /*< timings info */
 
     void MakeLoadOptsAvailable();
     void LoadINDAlgorithmDataInternal() final;
@@ -51,16 +44,15 @@ private:
     void MineINDs();
     void MineAINDs();
 
-    unsigned long long ExecuteInternal() final;
-    void ResetINDAlgorithmState() final;
+    void ExecuteInternal() final;
+
+    void ResetINDAlgorithmState() final {}
 
 public:
     explicit Spider();
 
-    /// get information about stage timings
-    StageTimings const& GetStageTimings() const noexcept {
-        return timings_;
-    }
+private:
+    friend class cind::CindAlgorithm;
 };
 
 }  // namespace algos

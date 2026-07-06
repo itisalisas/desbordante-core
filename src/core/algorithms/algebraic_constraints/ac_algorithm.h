@@ -4,25 +4,23 @@
 #include <unordered_map>
 #include <vector>
 
-#include <enum.h>
-
-#include "ac.h"
-#include "ac_exception.h"
-#include "ac_exception_finder.h"
-#include "ac_pairs_collection.h"
-#include "algorithms/algorithm.h"
-#include "bin_operation_enum.h"
-#include "config/tabular_data/input_table_type.h"
-#include "model/table/column_layout_typed_relation_data.h"
-#include "model/types/types.h"
-#include "ranges_collection.h"
-#include "typed_column_pair.h"
+#include "core/algorithms/algebraic_constraints/ac.h"
+#include "core/algorithms/algebraic_constraints/ac_exception.h"
+#include "core/algorithms/algebraic_constraints/ac_exception_finder.h"
+#include "core/algorithms/algebraic_constraints/ac_pairs_collection.h"
+#include "core/algorithms/algebraic_constraints/bin_operation_enum.h"
+#include "core/algorithms/algebraic_constraints/ranges_collection.h"
+#include "core/algorithms/algebraic_constraints/typed_column_pair.h"
+#include "core/algorithms/algorithm.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/model/table/column_layout_typed_relation_data.h"
+#include "core/model/types/types.h"
 
 namespace algos {
 
 /* Discovers Algebraic Constraints (AC). In theory AC consists of: 1) Set of value
  * pairs (a_i, b_k), where a_i from column A and b_k from column B. 2) Pairing
- * rule - bijection beetwen columns A and B. Algorithm was implemented with Trivial
+ * rule - bijection between columns A and B. Algorithm was implemented with Trivial
  * pairing rule. Trivial pairing rule creates (a_i, b_i) pairs, both values are from
  * the same row.  3) Binary operation. 4) Ranges - set of ranges/intervals that was
  * constructed by grouping results of binary operation between a_i and b_k, boundary
@@ -39,7 +37,7 @@ private:
 
     config::InputTable input_table_;
 
-    Binop bin_operation_ = Binop::_values()[0];
+    Binop bin_operation_ = magic_enum::enum_values<Binop>().front();
     /* Desired ratio of exceptions. Value lies in (0, 1] */
     double fuzziness_;
     /* Value lies in (0, 1]. Closer to 0 - many short intervals.
@@ -88,7 +86,7 @@ public:
     }
 
     size_t CalculateSampleSize(size_t k_bumps) const;
-    /* Returns ranges reconstucted with new weight for pair of columns */
+    /* Returns ranges reconstructed with new weight for pair of columns */
     RangesCollection ReconstructRangesByColumns(size_t lhs_i, size_t rhs_i, double weight);
 
     std::vector<RangesCollection> const& GetRangesCollections() const {
@@ -116,7 +114,7 @@ public:
         ac_exception_finder_->CollectExceptions(this);
     }
 
-    unsigned long long ExecuteInternal() override;
+    void ExecuteInternal() override;
 
     ACAlgorithm();
 };

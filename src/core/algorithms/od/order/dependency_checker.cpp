@@ -1,9 +1,9 @@
-#include "dependency_checker.h"
+#include "core/algorithms/od/order/dependency_checker.h"
 
 #include <algorithm>
 #include <unordered_set>
 
-#include "model/table/tuple_index.h"
+#include "core/model/table/tuple_index.h"
 
 namespace algos::order {
 
@@ -23,7 +23,7 @@ bool SubsetSetDifference(SortedPartition::EquivalenceClass const& a,
 }  // namespace
 
 ValidityType CheckForSwap(SortedPartition const& l, SortedPartition const& r) {
-    ValidityType res = ValidityType::valid;
+    ValidityType res = ValidityType::kValid;
     size_t l_i = 0, r_i = 0;
     bool next_l = true, next_r = true;
     SortedPartition::EquivalenceClass l_eq_class;
@@ -39,16 +39,16 @@ ValidityType CheckForSwap(SortedPartition const& l, SortedPartition const& r) {
         }
         if (l_eq_class.size() < r_eq_class.size()) {
             if (!SubsetSetDifference(l_eq_class, r_eq_class)) {
-                return ValidityType::swap;
+                return ValidityType::kSwap;
             } else {
-                res = ValidityType::merge;
+                res = ValidityType::kMerge;
                 ++l_i;
                 next_l = true;
                 next_r = false;
             }
         } else {
             if (!SubsetSetDifference(r_eq_class, l_eq_class)) {
-                return ValidityType::swap;
+                return ValidityType::kSwap;
             } else {
                 ++r_i;
                 next_r = true;

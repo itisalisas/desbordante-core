@@ -1,12 +1,12 @@
-#include "pfdtane.h"
+#include "core/algorithms/fd/tane/pfdtane.h"
 
 #include <algorithm>
 
-#include "config/error/option.h"
-#include "config/error_measure/option.h"
-#include "enums.h"
-#include "fd/pli_based_fd_algorithm.h"
-#include "model/table/column_data.h"
+#include "core/algorithms/fd/pli_based_fd_algorithm.h"
+#include "core/algorithms/fd/tane/enums.h"
+#include "core/config/error/option.h"
+#include "core/config/error_measure/option.h"
+#include "core/model/table/column_data.h"
 
 namespace algos {
 using Cluster = model::PositionListIndex::Cluster;
@@ -19,8 +19,7 @@ void PFDTane::MakeExecuteOptsAvailableFDInternal() {
     MakeOptionsAvailable({config::kErrorOpt.GetName(), config::kPfdErrorMeasureOpt.GetName()});
 }
 
-PFDTane::PFDTane(std::optional<ColumnLayoutRelationDataManager> relation_manager)
-    : tane::TaneCommon(relation_manager) {
+PFDTane::PFDTane() : tane::TaneCommon() {
     RegisterOptions();
 }
 
@@ -28,10 +27,9 @@ config::ErrorType PFDTane::CalculateZeroAryFdError(ColumnData const* rhs) {
     return CalculateZeroAryPFDError(rhs);
 }
 
-config::ErrorType PFDTane::CalculateFdError(
-        model::PositionListIndex const* lhs_pli,
-        [[maybe_unused]] model::PositionListIndex const* rhs_pli,
-        model::PositionListIndex const* joint_pli) {
+config::ErrorType PFDTane::CalculateFdError(model::PLIWS const* lhs_pli,
+                                            [[maybe_unused]] model::PLIWS const* rhs_pli,
+                                            model::PLIWS const* joint_pli) {
     return CalculatePFDError(lhs_pli, joint_pli, pfd_error_measure_);
 }
 
@@ -70,15 +68,15 @@ config::ErrorType PFDTane::CalculatePFDError(model::PositionListIndex const* x_p
                 xa_cluster_it++;
             }
         }
-        sum += measure == +PfdErrorMeasure::per_tuple ? static_cast<double>(max)
-                                                      : static_cast<double>(max) / x_cluster.size();
+        sum += measure == PfdErrorMeasure::kPerTuple ? static_cast<double>(max)
+                                                     : static_cast<double>(max) / x_cluster.size();
         cluster_rows_count += x_cluster.size();
     }
     unsigned int unique_rows =
             static_cast<unsigned int>(x_pli->GetRelationSize() - cluster_rows_count);
     double probability = static_cast<double>(sum + unique_rows) /
-                         (measure == +PfdErrorMeasure::per_tuple ? x_pli->GetRelationSize()
-                                                                 : x_index.size() + unique_rows);
+                         (measure == PfdErrorMeasure::kPerTuple ? x_pli->GetRelationSize()
+                                                                : x_index.size() + unique_rows);
     return 1.0 - probability;
 }
 

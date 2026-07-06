@@ -3,13 +3,13 @@
 #include <string>
 #include <vector>
 
-#include "algorithms/fd/fd_algorithm.h"
-#include "algorithms/fd/fdep/fd_tree_element.h"
-#include "config/equal_nulls/type.h"
-#include "config/tabular_data/input_table_type.h"
-#include "model/table/relation_data.h"
-#include "model/table/relational_schema.h"
-#include "model/types/bitset.h"
+#include "core/algorithms/fd/fd_algorithm.h"
+#include "core/algorithms/fd/fdep/fd_tree_element.h"
+#include "core/config/equal_nulls/type.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/model/table/relation_data.h"
+#include "core/model/table/relational_schema.h"
+#include "core/model/types/bitset.h"
 
 namespace algos {
 
@@ -37,7 +37,7 @@ private:
     void LoadDataInternal() final;
 
     void ResetStateFd() final;
-    unsigned long long ExecuteInternal() final;
+    void ExecuteInternal() final;
 
     // Building negative cover via violated dependencies
     void BuildNegativeCover();

@@ -2,12 +2,12 @@
 
 #include <vector>
 
-#include "algorithms/algorithm.h"
-#include "algorithms/ucc/ucc_verifier/ucc_stats_calculator.h"
-#include "config/equal_nulls/type.h"
-#include "config/indices/type.h"
-#include "config/tabular_data/input_table_type.h"
-#include "model/table/column_layout_relation_data.h"
+#include "core/algorithms/algorithm.h"
+#include "core/algorithms/ucc/ucc_verifier/ucc_stats_calculator.h"
+#include "core/config/equal_nulls/type.h"
+#include "core/config/indices/type.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/model/table/column_layout_relation_data.h"
 
 namespace algos {
 
@@ -17,7 +17,6 @@ class UCCVerifier : public Algorithm {
 private:
     /* input options */
     config::IndicesType column_indices_;
-    config::EqNullsType is_null_equal_null_{};
 
     config::InputTable input_table_;
     std::shared_ptr<ColumnLayoutRelationData> relation_;
@@ -26,12 +25,11 @@ private:
     size_t num_rows_violating_ucc_ = 0;
     std::vector<model::PLI::Cluster> clusters_violating_ucc_;
 
-    void VerifyUCC();
     void CalculateStatistics(std::deque<model::PLI::Cluster> const& clusters);
     void RegisterOptions();
     void LoadDataInternal() override;
     void MakeExecuteOptsAvailable() override;
-    unsigned long long ExecuteInternal() override;
+    void ExecuteInternal() override;
     std::shared_ptr<model::PLI const> CalculatePLI();
 
     void ResetState() override {

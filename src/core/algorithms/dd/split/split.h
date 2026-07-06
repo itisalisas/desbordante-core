@@ -7,15 +7,15 @@
 #include <utility>
 #include <vector>
 
-#include "algorithms/algorithm.h"
-#include "algorithms/dd/dd.h"
-#include "algorithms/dd/split/model/distance_position_list_index.h"
-#include "config/tabular_data/input_table_type.h"
-#include "enums.h"
-#include "model/table/column_index.h"
-#include "model/table/column_layout_relation_data.h"
-#include "model/table/column_layout_typed_relation_data.h"
-#include "model/types/builtin.h"
+#include "core/algorithms/algorithm.h"
+#include "core/algorithms/dd/dd.h"
+#include "core/algorithms/dd/split/enums.h"
+#include "core/algorithms/dd/split/model/distance_position_list_index.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/model/table/column_index.h"
+#include "core/model/table/column_layout_relation_data.h"
+#include "core/model/table/column_layout_typed_relation_data.h"
+#include "core/model/types/builtin.h"
 
 namespace algos::dd {
 
@@ -38,7 +38,7 @@ private:
     config::InputTable difference_table_;
     std::unique_ptr<model::ColumnLayoutTypedRelationData> difference_typed_relation_;
 
-    Reduce const reduce_method_ = Reduce::IEHybrid;  // currently, the fastest method
+    Reduce const reduce_method_ = Reduce::kIeHybrid;  // currently, the fastest method
     unsigned const num_dfs_per_column_ = 5;
 
     std::vector<DistancePositionListIndex> plis_;
@@ -93,7 +93,7 @@ private:
     std::list<DD> InstanceExclusionReduce(std::vector<std::size_t> const& tuple_pair_indices,
                                           std::vector<DF> const& search, DF const& rhs,
                                           unsigned& cnt);
-    unsigned ReduceDDs(auto const& start_time);
+    unsigned ReduceDDs();
     unsigned RemoveRedundantDDs();
     unsigned RemoveTransitiveDDs();
     model::DDString DDToDDString(DD const& dd) const;
@@ -102,7 +102,7 @@ private:
 protected:
     void LoadDataInternal() override;
     void MakeExecuteOptsAvailable() override;
-    unsigned long long ExecuteInternal() override;
+    void ExecuteInternal() override;
 
 public:
     Split();

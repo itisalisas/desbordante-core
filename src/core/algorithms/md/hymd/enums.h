@@ -1,12 +1,14 @@
 #pragma once
 
-#include <enum.h>
+#include <magic_enum/magic_enum.hpp>
+
+#include "core/util/export.h"
 
 namespace algos::hymd {
 
-BETTER_ENUM(LevelDefinition, char,
-            cardinality = 0, /*define level as the set of mds with the same cardinality*/
-            lattice          /*define level as the whole lattice*/
-)
+enum class DESBORDANTE_EXPORT LevelDefinition : char {
+    kCardinality = 0, /*define level as the set of mds with the same cardinality*/
+    kLattice          /*define level as the whole lattice*/
 
+};
 }

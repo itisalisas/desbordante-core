@@ -1,22 +1,19 @@
-#include "algorithms/fd/fd_verifier/dynamic_fd_verifier.h"
+#include "core/algorithms/fd/fd_verifier/dynamic_fd_verifier.h"
 
-#include <chrono>
 #include <memory>
 #include <stdexcept>
 
-#include <easylogging++.h>
-
-#include "config/equal_nulls/option.h"
-#include "config/indices/option.h"
-#include "config/indices/validate_index.h"
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/tabular_data/crud_operations/operations.h"
-#include "config/tabular_data/input_table/option.h"
+#include "core/config/equal_nulls/option.h"
+#include "core/config/indices/option.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/tabular_data/crud_operations/operations.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/util/logger.h"
 
 namespace algos::fd_verifier {
 
-DynamicFDVerifier::DynamicFDVerifier() : Algorithm({}) {
+DynamicFDVerifier::DynamicFDVerifier() : Algorithm() {
     RegisterOptions();
     MakeOptionsAvailable({config::kTableOpt.GetName(), config::kLhsIndicesOpt.GetName(),
                           config::kRhsIndicesOpt.GetName()});
@@ -113,16 +110,15 @@ void DynamicFDVerifier::LoadDataInternal() {
     SortHighlightsByProportionDescending();
 }
 
-unsigned long long DynamicFDVerifier::ExecuteInternal() {
-    auto start_time = std::chrono::system_clock::now();
+void DynamicFDVerifier::ExecuteInternal() {
     std::vector<std::pair<std::optional<size_t>, std::vector<int>>> lhs_inserts{}, rhs_inserts{};
     std::unordered_set<size_t> deletes_and_updates_indices{delete_statement_indices_};
     if (insert_statements_table_ != nullptr) {
         while (insert_statements_table_->HasNextRow()) {
             std::vector<std::string> row = insert_statements_table_->GetNextRow();
             if (row.size() != input_table_->GetNumberOfColumns()) {
-                LOG(WARNING) << "Received row with size " << row.size() << ", but expected "
-                             << input_table_->GetNumberOfColumns();
+                LOG_WARN("Received row with size {}, but expected {}", row.size(),
+                         input_table_->GetNumberOfColumns());
                 continue;
             }
             lhs_inserts.emplace_back(std::nullopt, ParseRowForPLI(row.begin(), lhs_indices_));
@@ -134,8 +130,8 @@ unsigned long long DynamicFDVerifier::ExecuteInternal() {
         while (update_statements_table_->HasNextRow()) {
             std::vector<std::string> row = update_statements_table_->GetNextRow();
             if (row.size() != input_table_->GetNumberOfColumns() + 1) {
-                LOG(WARNING) << "Received row with size " << row.size() << ", but expected "
-                             << input_table_->GetNumberOfColumns() + 1;
+                LOG_WARN("Received row with size {}, but expected {}", row.size(),
+                         input_table_->GetNumberOfColumns() + 1);
                 continue;
             }
             size_t row_id = std::stoull(row.front());
@@ -154,10 +150,6 @@ unsigned long long DynamicFDVerifier::ExecuteInternal() {
 
     VerifyFD();
     SortHighlightsByProportionDescending();
-
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    return elapsed_milliseconds.count();
 }
 
 void DynamicFDVerifier::VerifyFD() const {

@@ -2,12 +2,12 @@
 
 #include <memory>
 
-#include "config/thread_number/option.h"
-#include "config/thread_number/type.h"
-#include "fd/hycommon/types.h"
-#include "model/table/column_layout_relation_data.h"
-#include "model/table/idataset_stream.h"
-#include "ucc/ucc_algorithm.h"
+#include "core/algorithms/fd/hycommon/types.h"
+#include "core/algorithms/ucc/ucc_algorithm.h"
+#include "core/config/thread_number/option.h"
+#include "core/config/thread_number/type.h"
+#include "core/model/table/column_layout_relation_data.h"
+#include "core/model/table/idataset_stream.h"
 
 namespace algos {
 
@@ -17,7 +17,7 @@ private:
     config::ThreadNumType threads_num_ = 1;
 
     void LoadDataInternal() override;
-    unsigned long long ExecuteInternal() override;
+    void ExecuteInternal() override;
 
     void ResetUCCAlgorithmState() override {}
 
@@ -29,7 +29,7 @@ private:
     }
 
 public:
-    HyUCC() : UCCAlgorithm({}) {
+    HyUCC() : UCCAlgorithm() {
         RegisterOption(config::kThreadNumberOpt(&threads_num_));
     }
 };

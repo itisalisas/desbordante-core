@@ -9,19 +9,19 @@
 #include <unordered_map>
 #include <vector>
 
-#include "algorithms/algorithm.h"
-#include "algorithms/metric/aliases.h"
-#include "algorithms/metric/enums.h"
-#include "algorithms/metric/highlight_calculator.h"
-#include "algorithms/metric/points.h"
-#include "algorithms/metric/points_calculator.h"
-#include "config/equal_nulls/type.h"
-#include "config/indices/type.h"
-#include "config/tabular_data/input_table_type.h"
-#include "model/table/column_layout_relation_data.h"
-#include "model/table/column_layout_typed_relation_data.h"
-#include "util/convex_hull.h"
-#include "util/qgram_vector.h"
+#include "core/algorithms/algorithm.h"
+#include "core/algorithms/metric/aliases.h"
+#include "core/algorithms/metric/enums.h"
+#include "core/algorithms/metric/highlight_calculator.h"
+#include "core/algorithms/metric/points.h"
+#include "core/algorithms/metric/points_calculator.h"
+#include "core/config/equal_nulls/type.h"
+#include "core/config/indices/type.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/model/table/column_layout_relation_data.h"
+#include "core/model/table/column_layout_typed_relation_data.h"
+#include "core/util/convex_hull.h"
+#include "core/util/qgram_vector.h"
 
 namespace algos::metric {
 
@@ -29,8 +29,8 @@ class MetricVerifier : public Algorithm {
 private:
     config::InputTable input_table_;
 
-    Metric metric_ = Metric::_values()[0];
-    MetricAlgo algo_ = MetricAlgo::_values()[0];
+    Metric metric_ = magic_enum::enum_values<Metric>().front();
+    MetricAlgo algo_ = magic_enum::enum_values<MetricAlgo>().front();
     config::IndicesType lhs_indices_;
     config::IndicesType rhs_indices_;
     long double parameter_;
@@ -86,7 +86,7 @@ private:
 protected:
     void LoadDataInternal() final;
     void MakeExecuteOptsAvailable() override;
-    unsigned long long ExecuteInternal() override;
+    void ExecuteInternal() override;
 
 public:
     bool GetResult() const {

@@ -3,26 +3,25 @@
  *
  * Mind algorithm class methods definition
  */
-#include "mind.h"
+#include "core/algorithms/ind/mind/mind.h"
 
 #include <algorithm>
 #include <unordered_set>
 
-#include "algorithms/create_algorithm.h"
-#include "config/error/option.h"
-#include "config/names_and_descriptions.h"
-#include "error/type.h"
-#include "ind/ind_algorithm.h"
-#include "max_arity/option.h"
-#include "model/table/dataset_stream_projection.h"
-#include "table/column_combination.h"
-#include "table/dataset_stream_fixed.h"
-#include "tabular_data/input_table_type.h"
-#include "util/timed_invoke.h"
+#include "core/algorithms/create_algorithm.h"
+#include "core/algorithms/ind/ind_algorithm.h"
+#include "core/config/error/option.h"
+#include "core/config/error/type.h"
+#include "core/config/max_arity/option.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/model/table/column_combination.h"
+#include "core/model/table/dataset_stream_fixed.h"
+#include "core/model/table/dataset_stream_projection.h"
 
 namespace algos {
 
-Mind::Mind() : INDAlgorithm({}) {
+Mind::Mind() : INDAlgorithm() {
     MakeLoadOptsAvailable();
 
     RegisterOption(config::kErrorOpt(&max_ind_error_));
@@ -34,7 +33,7 @@ void Mind::MakeLoadOptsAvailable() {
      * At the moment we only have one algorithm for mining unary approximate inds.
      * In the future we should give the user the ability to choose the algorithm.
      */
-    auind_algo_ = CreateAlgorithmInstance<INDAlgorithm>(AlgorithmType::spider);
+    auind_algo_ = CreateAlgorithmInstance<INDAlgorithm>(AlgorithmType::kSpider);
 }
 
 void Mind::MakeExecuteOptsAvailable() {
@@ -54,8 +53,12 @@ std::type_index Mind::GetExternalTypeIndex(std::string_view option_name) const {
     return auind_algo_->GetTypeIndex(option_name);
 };
 
+bool Mind::ExternalOptionIsRequired(std::string_view option_name) const {
+    return auind_algo_->OptionIsRequired(option_name);
+}
+
 void Mind::LoadINDAlgorithmDataInternal() {
-    timings_.load = util::TimedInvoke(&Algorithm::LoadData, auind_algo_);
+    auind_algo_->LoadData();
 }
 
 void Mind::AddSpecificNeededOptions(std::unordered_set<std::string_view>& previous_options) const {
@@ -266,15 +269,9 @@ void Mind::MineNaryINDs() {
     };
 }
 
-unsigned long long Mind::ExecuteInternal() {
-    timings_.compute_uinds = util::TimedInvoke(&Mind::MineUnaryINDs, this);
-    timings_.compute_ninds = util::TimedInvoke(&Mind::MineNaryINDs, this);
-    return timings_.compute_uinds + timings_.compute_ninds;
-}
-
-void Mind::ResetINDAlgorithmState() {
-    timings_.compute_uinds = 0;
-    timings_.compute_ninds = 0;
+void Mind::ExecuteInternal() {
+    MineUnaryINDs();
+    MineNaryINDs();
 }
 
 }  // namespace algos

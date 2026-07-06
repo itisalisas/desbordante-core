@@ -4,17 +4,17 @@
 #include <memory>
 #include <unordered_map>
 
-#include "big_int_type.h"
-#include "create_type.h"
-#include "date_type.h"
-#include "double_type.h"
-#include "empty_type.h"
-#include "int_type.h"
-#include "null_type.h"
-#include "numeric_type.h"
-#include "string_type.h"
-#include "type.h"
-#include "undefined_type.h"
+#include "core/model/types/big_int_type.h"
+#include "core/model/types/create_type.h"
+#include "core/model/types/date_type.h"
+#include "core/model/types/double_type.h"
+#include "core/model/types/empty_type.h"
+#include "core/model/types/int_type.h"
+#include "core/model/types/null_type.h"
+#include "core/model/types/numeric_type.h"
+#include "core/model/types/string_type.h"
+#include "core/model/types/type.h"
+#include "core/model/types/undefined_type.h"
 
 namespace model {
 
@@ -32,7 +32,7 @@ private:
         return alignment;
     }
 
-    static constexpr size_t kTypeIdSize = sizeof(TypeId::_integral);
+    static constexpr size_t kTypeIdSize = sizeof(std::underlying_type_t<TypeId>);
 
 public:
     explicit MixedType(bool is_null_eq_null) noexcept
@@ -68,10 +68,10 @@ public:
 
     void Free(std::byte const* value) const noexcept override {
         TypeId const type_id = RetrieveTypeId(value);
-        if (type_id == +TypeId::kString || type_id == +TypeId::kBigInt) {
+        if (type_id == TypeId::kString || type_id == TypeId::kBigInt) {
             StringType::Destruct(RetrieveValue(value));
         }
-        if (type_id == +TypeId::kDate) {
+        if (type_id == TypeId::kDate) {
             DateType::Destruct(RetrieveValue(value));
         }
         Type::Free(value);
@@ -86,7 +86,7 @@ public:
         throw std::logic_error("Mixed type does not have a fixed size");
     }
 
-    // It's correct, but not optimal, need to be rewrited later with other virtual
+    // It's correct, but not optimal, need to be rewritten later with other virtual
     // Clone(std::byte const* value, std::byte const* new_value)
     [[nodiscard]] std::byte* Clone(std::byte const* value) const override {
         std::unique_ptr<Type> type = RetrieveType(value);
@@ -127,7 +127,7 @@ public:
                 {TypeId::kNull, alignof(Null)},     {TypeId::kEmpty, alignof(Empty)},
                 {TypeId::kInt, alignof(Int)},       {TypeId::kDouble, alignof(Double)},
                 {TypeId::kString, alignof(String)}, {TypeId::kBigInt, alignof(BigInt)},
-                {TypeId::kDate, alignof(Date)}};
+                {TypeId::kDate, alignof(Date)},     {TypeId::kBool, alignof(bool)}};
         assert(type_to_alignment.find(type_id) != type_to_alignment.end());
         return type_to_alignment.at(type_id);
     }

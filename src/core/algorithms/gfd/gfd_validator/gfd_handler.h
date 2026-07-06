@@ -1,10 +1,10 @@
 #pragma once
 #include <vector>
 
-#include "algorithms/algorithm.h"
-#include "algorithms/gfd/gfd.h"
-#include "config/names_and_descriptions.h"
-#include "parser/graph_parser/graph_parser.h"
+#include "core/algorithms/algorithm.h"
+#include "core/algorithms/gfd/gfd.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/parser/graph_parser/graph_parser.h"
 
 namespace algos {
 
@@ -17,7 +17,7 @@ protected:
     std::vector<model::Gfd> gfds_;
     std::vector<model::Gfd> result_;
 
-    unsigned long long ExecuteInternal();
+    void ExecuteInternal();
 
     void ResetState() final;
     void LoadDataInternal() final;
@@ -31,7 +31,7 @@ public:
     GfdHandler();
 
     GfdHandler(model::graph_t graph_, std::vector<model::Gfd> gfds_)
-        : Algorithm({}), graph_(graph_), gfds_(gfds_) {
+        : Algorithm(), graph_(graph_), gfds_(gfds_) {
         ExecutePrepare();
     }
 

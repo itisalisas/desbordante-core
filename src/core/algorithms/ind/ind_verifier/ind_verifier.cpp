@@ -1,9 +1,9 @@
 /** \file
  * \brief INDVerifier algorithm
  *
- * Algorithm for veryfing AIND implementation.
+ * Algorithm for verifying AIND implementation.
  */
-#include "ind_verifier.h"
+#include "core/algorithms/ind/ind_verifier/ind_verifier.h"
 
 #include <set>
 #include <sstream>
@@ -11,19 +11,17 @@
 
 #include <boost/functional/hash.hpp>
 
-#include "config/indices/option.h"
-#include "config/tabular_data/input_tables/option.h"
-#include "indices/option.h"
-#include "model/table/dataset_stream_projection.h"
-#include "model/table/table_index.h"
-#include "table/dataset_stream_fixed.h"
-#include "table/tuple_index.h"
-#include "tabular_data/input_table_type.h"
-#include "timed_invoke.h"
+#include "core/config/indices/option.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/config/tabular_data/input_tables/option.h"
+#include "core/model/table/dataset_stream_fixed.h"
+#include "core/model/table/dataset_stream_projection.h"
+#include "core/model/table/table_index.h"
+#include "core/model/table/tuple_index.h"
 
 namespace algos {
 
-INDVerifier::INDVerifier() : Algorithm({}) {
+INDVerifier::INDVerifier() : Algorithm() {
     RegisterOptions();
     MakeOptionsAvailable({config::kTablesOpt.GetName()});
 }
@@ -79,7 +77,7 @@ void INDVerifier::LoadDataInternal() {
     /* Do nothing, we don't prepocess any data before executing. */
 }
 
-void INDVerifier::VerifyIND() {
+void INDVerifier::ExecuteInternal() {
     /* Ensure, that all rows have model::IDatasetStream::GetNumberOfColumns() values. */
     using FixedStream = model::DatasetStreamFixed<model::IDatasetStream*>;
     /* Perform a projection of the fixed dataset stream. */
@@ -135,10 +133,6 @@ void INDVerifier::VerifyIND() {
 
     model::TupleIndex lhs_cardinality = lhs_rows.size();
     error_ = static_cast<Error>(GetViolatingClustersCount()) / lhs_cardinality;
-}
-
-unsigned long long INDVerifier::ExecuteInternal() {
-    return util::TimedInvoke(&INDVerifier::VerifyIND, this);
 }
 
 }  // namespace algos

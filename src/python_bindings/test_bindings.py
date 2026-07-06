@@ -1,3 +1,5 @@
+import pathlib
+import tempfile
 import unittest
 from collections import namedtuple
 from itertools import chain
@@ -7,14 +9,14 @@ import desbordante as desb
 OptionContainer = namedtuple("OptionContainer", ['path', 'load_options', 'execute_options'])
 FailureCaseContainer = namedtuple("FailureCaseContainer", ['path', 'options'])
 
-ONLY_NULL_EQUAL_NULL_OPTION_CONTAINER = OptionContainer(
-    "WDC_satellites.csv", {"is_null_equal_null": False}, {}
+TABLE_ONLY_CONTAINER = OptionContainer(
+    "WDC_satellites.csv", {}, {}
 )
 
 
 def get_common_option_container(execute_options):
     return OptionContainer(
-        "WDC_satellites.csv", {"is_null_equal_null": False}, execute_options
+        "WDC_satellites.csv", {}, execute_options
     )
 
 
@@ -30,11 +32,11 @@ def check_metric_verifier_failure(dataset, options) -> bool:
 
 
 ALGO_CORRECT_OPTIONS_INFO = [
-    (desb.fd.algorithms.Depminer, [ONLY_NULL_EQUAL_NULL_OPTION_CONTAINER]),
-    (desb.fd.algorithms.FUN, [ONLY_NULL_EQUAL_NULL_OPTION_CONTAINER]),
-    (desb.fd.algorithms.FdMine, [ONLY_NULL_EQUAL_NULL_OPTION_CONTAINER]),
-    (desb.fd.algorithms.HyFD, [ONLY_NULL_EQUAL_NULL_OPTION_CONTAINER]),
-    (desb.fd.algorithms.EulerFD, [ONLY_NULL_EQUAL_NULL_OPTION_CONTAINER]),
+    (desb.fd.algorithms.Depminer, [TABLE_ONLY_CONTAINER]),
+    (desb.fd.algorithms.FUN, [TABLE_ONLY_CONTAINER]),
+    (desb.fd.algorithms.FdMine, [TABLE_ONLY_CONTAINER]),
+    (desb.fd.algorithms.HyFD, [TABLE_ONLY_CONTAINER]),
+    (desb.fd.algorithms.EulerFD, [TABLE_ONLY_CONTAINER]),
     (desb.afd.algorithms.Pyro, [
         get_common_option_container(
             {"seed": 1, "max_lhs": 12, "threads": 5, "error": 0.015}
@@ -196,6 +198,37 @@ class TestPythonBindings(unittest.TestCase):
                 with self.assertRaises(desb.ConfigurationError):
                     check_metric_verifier_failure(load.path, load.options)
                 
+
+
+class TestMaxFEM(unittest.TestCase):
+    # Sequence: event 1 three times, event 2 twice (infrequent at minsup=3),
+    # window_size=1 prevents composite episodes.
+    # Expected: one maximal episode [[1]] with support 3.
+    _SEQUENCE = [[1], [2], [1], [2], [1]]
+    _MINSUP = 3
+    _WINDOW_SIZE = 1
+    _EXPECTED = [([[1]], 3)]
+
+    def _run(self, sequence_arg):
+        alg = desb.fem.MaxFEM()
+        alg.load_data(sequence=sequence_arg)
+        alg.execute(minsup=self._MINSUP, window_size=self._WINDOW_SIZE)
+        return alg.get_max_frequent_episodes()
+
+    def test_iterable_input(self):
+        result = self._run(self._SEQUENCE)
+        self.assertEqual(result, self._EXPECTED)
+
+    def test_path_input(self):
+        content = "\n".join(" ".join(str(e) for e in events) for events in self._SEQUENCE)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(content)
+            tmp_path = pathlib.Path(f.name)
+        try:
+            result = self._run(tmp_path)
+            self.assertEqual(result, self._EXPECTED)
+        finally:
+            tmp_path.unlink()
 
 
 if __name__ == "__main__":

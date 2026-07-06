@@ -4,7 +4,9 @@
 
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/serialization/strong_typedef.hpp>
-#include <enum.h>
+
+#define MAGIC_ENUM_ENABLE_HASH
+#include <magic_enum/magic_enum.hpp>
 
 namespace model {
 
@@ -46,8 +48,7 @@ using AllValueTypes = std::tuple<Int, Double, BigInt, String, Null, Empty>;
  * Maybe we need to use separate enums to describe column types and value types to
  * avoid confusion.
  */
-// clang-format off
-BETTER_ENUM(TypeId, char,
+enum class TypeId : char {
     kInt = 0,   /* Except for nulls and empties column contains only ints
                  * (fixed-precision integer value) */
     kDouble,    /* Except for nulls and empties column contains only doubles
@@ -56,15 +57,14 @@ BETTER_ENUM(TypeId, char,
                  * (arbitrary-precision integer value) */
     kString,    /* Except for nulls and empties column contains only strings
                  * (string value, sequence of characters) */
+    kBool,      /* Column contains only boolean values (true/false or 1/0) */
     kDate,      /* Column contains only valid dates in the range 1400-Jan-01 to 9999-Dec-31
                  * (class date from boost::gregorian)  */
     kNull,      /* Column contains only nulls ("NULL" value) */
     kEmpty,     /* Column contains only empties ("" value) */
     kUndefined, /* Column contains only nulls and empties */
     kMixed      /* Except for nulls and empties column contains more than one type */
-);
-
-// clang-format on
+};
 
 template <typename T>
 struct TypeConverter {};
@@ -139,6 +139,3 @@ struct TupleMaxAlign<std::tuple<Ts...>> {
 inline constexpr size_t kTypesMaxAlignment = detail::TupleMaxAlign<AllValueTypes>::kValue;
 
 }  // namespace model
-
-/* Should be outside the namespace */
-BETTER_ENUMS_DECLARE_STD_HASH(model::TypeId)

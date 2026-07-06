@@ -1,4 +1,4 @@
-#include "sample.h"
+#include "core/algorithms/fd/sfd/sample.h"
 
 #include <chrono>
 #include <random>
@@ -6,13 +6,13 @@
 #include <unordered_set>
 #include <vector>
 
-#include "frequency_handler.h"
-#include "model/table/tuple_index.h"
+#include "core/algorithms/fd/sfd/frequency_handler.h"
+#include "core/model/table/tuple_index.h"
 
 namespace algos {
 Sample::Sample(bool fixed_sample, unsigned long long sample_size, model::TupleIndex rows,
                model::ColumnIndex lhs, model::ColumnIndex rhs,
-               std::vector<model::TypedColumnData> const &data, RelationalSchema const *rel_schema_)
+               std::vector<model::TypedColumnData> const& data, RelationalSchema const* rel_schema_)
     : lhs_col_(rel_schema_, rel_schema_->GetColumn(lhs)->GetName(), lhs),
       rhs_col_(rel_schema_, rel_schema_->GetColumn(rhs)->GetName(), rhs) {
     auto seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
@@ -48,8 +48,8 @@ unsigned long long Sample::CalculateSampleSize(size_t lhs_cardinality, size_t rh
     return static_cast<long long>((numerator / denominator) * (v2 / 1.69));
 }
 
-void Sample::Filter(FrequencyHandler const &handler,
-                    std::vector<model::TypedColumnData> const &data, model::ColumnIndex col_ind) {
+void Sample::Filter(FrequencyHandler const& handler,
+                    std::vector<model::TypedColumnData> const& data, model::ColumnIndex col_ind) {
     std::erase_if(row_indices_, [&handler, &data, col_ind](model::TupleIndex row_id) {
         return !handler.ContainsValAtColumn(data[col_ind].GetDataAsString(row_id), col_ind);
     });

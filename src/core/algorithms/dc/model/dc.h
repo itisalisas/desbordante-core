@@ -7,9 +7,9 @@
 #include <utility>
 #include <vector>
 
-#include "algorithms/dc/model/predicate.h"
-#include "model/table/column.h"
-#include "model/table/vertical.h"
+#include "core/algorithms/dc/model/predicate.h"
+#include "core/model/table/column.h"
+#include "core/model/table/vertical.h"
 
 namespace algos::dc {
 
@@ -43,7 +43,7 @@ public:
     DC() = default;
 
     template <class Iter>
-    DC(Iter first, Iter last) : predicates_(first, last){};
+    DC(Iter first, Iter last) : predicates_(first, last) {};
 
     // returns unique columns indices from each Predicate which satisfy the given predicate
     template <class Pred>

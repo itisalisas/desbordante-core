@@ -1,21 +1,24 @@
-#include "algorithms/statistics/data_stats.h"
+#include "core/algorithms/statistics/data_stats.h"
 
 #include <set>
+#include <unicode/normlzr.h>
+#include <unicode/uchar.h>
+#include <unicode/unistr.h>
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/thread.hpp>
 
-#include "config/equal_nulls/option.h"
-#include "config/tabular_data/input_table/option.h"
-#include "config/thread_number/option.h"
+#include "core/config/equal_nulls/option.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/config/thread_number/option.h"
 
 namespace algos {
 
 namespace fs = std::filesystem;
 namespace mo = model;
 
-DataStats::DataStats() : Algorithm({"Calculating statistics"}) {
+DataStats::DataStats() : Algorithm() {
     RegisterOptions();
     MakeOptionsAvailable({config::kTableOpt.GetName(), config::kEqualNullsOpt.GetName()});
 }
@@ -184,11 +187,13 @@ size_t DataStats::MixedDistinct(size_t index) const {
     std::vector<std::byte const*> const& data = col.GetData();
     mo::MixedType mixed_type(is_null_equal_null_);
 
-    std::vector<std::vector<std::byte const*>> values_by_type_id(mo::TypeId::_size());
+    std::vector<std::vector<std::byte const*>> values_by_type_id(
+            magic_enum::enum_count<mo::TypeId>());
 
     for (size_t i = 0; i < data.size(); ++i) {
         if (col.IsNullOrEmpty(i)) continue;
-        values_by_type_id[mixed_type.RetrieveTypeId(data[i])._to_index()].push_back(data[i]);
+        auto type_id = mixed_type.RetrieveTypeId(data[i]);
+        values_by_type_id[magic_enum::enum_index(type_id).value()].push_back(data[i]);
     }
 
     size_t result = 0;
@@ -202,7 +207,7 @@ size_t DataStats::MixedDistinct(size_t index) const {
 size_t DataStats::Distinct(size_t index) {
     if (all_stats_[index].distinct != 0) return all_stats_[index].distinct;
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() == +mo::TypeId::kMixed) {
+    if (col.GetTypeId() == mo::TypeId::kMixed) {
         all_stats_[index].distinct = MixedDistinct(index);
         return all_stats_[index].distinct;
     }
@@ -234,8 +239,8 @@ bool DataStats::IsCategorical(size_t index, size_t quantity) {
 std::vector<std::byte const*> DataStats::DeleteNullAndEmpties(size_t index) const {
     mo::TypedColumnData const& col = col_data_[index];
     mo::TypeId type_id = col.GetTypeId();
-    if (type_id == +mo::TypeId::kNull || type_id == +mo::TypeId::kEmpty ||
-        type_id == +mo::TypeId::kUndefined)
+    if (type_id == mo::TypeId::kNull || type_id == mo::TypeId::kEmpty ||
+        type_id == mo::TypeId::kUndefined)
         return {};
     std::vector<std::byte const*> const& data = col.GetData();
     std::vector<std::byte const*> res;
@@ -318,9 +323,57 @@ Statistic DataStats::GetNumberOfZeros(size_t index) const {
     return CountIfInBinaryRelationWithZero(index, mo::CompareResult::kEqual);
 }
 
+Statistic DataStats::GetZeroPercent(size_t index) const {
+    if (all_stats_[index].num_diacritic_chars.HasValue()) return all_stats_[index].zero_percent;
+    mo::TypedColumnData const& col = col_data_[index];
+    if (!col.IsNumeric()) return {};
+
+    int total = NumberOfValues(index) - GetNumNulls(index);
+    assert(total >= 0);
+    if (total == 0) return {};
+
+    Statistic zeros_stat = GetNumberOfZeros(index);
+    mo::Int zeros = mo::Type::GetValue<mo::Int>(zeros_stat.GetData());
+    double percent = static_cast<double>(zeros) / total;
+
+    mo::DoubleType double_type;
+    std::byte* result = double_type.MakeValue(percent);
+    return Statistic(result, &double_type, false);
+}
+
 Statistic DataStats::GetNumberOfNegatives(size_t index) const {
     if (all_stats_[index].num_negatives.HasValue()) return all_stats_[index].num_negatives;
     return CountIfInBinaryRelationWithZero(index, mo::CompareResult::kLess);
+}
+
+Statistic DataStats::CountBool(size_t index, bool expected) const {
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kBool) return {};
+
+    size_t count = 0;
+    std::vector<std::byte const*> const& data = col.GetData();
+
+    for (size_t i = 0; i < data.size(); ++i) {
+        if (col.IsNullOrEmpty(i)) continue;
+
+        bool value = *reinterpret_cast<bool const*>(data[i]);
+        if (value == expected) count++;
+    }
+
+    mo::IntType int_type;
+    return Statistic(int_type.MakeValue(count), &int_type, false);
+}
+
+Statistic DataStats::GetTrueCount(size_t index) const {
+    if (all_stats_[index].true_count.HasValue()) return all_stats_[index].true_count;
+
+    return CountBool(index, true);
+}
+
+Statistic DataStats::GetFalseCount(size_t index) const {
+    if (all_stats_[index].false_count.HasValue()) return all_stats_[index].false_count;
+
+    return CountBool(index, false);
 }
 
 Statistic DataStats::GetSumOfSquares(size_t index) const {
@@ -492,7 +545,7 @@ Statistic DataStats::GetMedianAD(size_t index) const {
 Statistic DataStats::GetVocab(size_t index) const {
     if (all_stats_[index].vocab.HasValue()) return all_stats_[index].vocab;
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     mo::StringType string_type;
     std::string string_data;
@@ -548,7 +601,7 @@ Statistic DataStats::GetNumberOfUppercaseChars(size_t index) const {
 template <class Pred>
 Statistic DataStats::CountIfInColumn(Pred pred, size_t index) const {
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     size_t count = 0;
     mo::IntType int_type;
@@ -567,7 +620,7 @@ Statistic DataStats::CountIfInColumn(Pred pred, size_t index) const {
 
 Statistic DataStats::GetNumberOfChars(size_t index) const {
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     return GetStringSumOf(index, [](std::string const& line) { return line.size(); });
 }
@@ -576,7 +629,7 @@ Statistic DataStats::GetAvgNumberOfChars(size_t index) const {
     if (all_stats_[index].num_avg_chars.HasValue()) return all_stats_[index].num_avg_chars;
 
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     mo::DoubleType double_type;
     mo::IntType int_type;
@@ -656,7 +709,7 @@ Statistic DataStats::GetStringSumOf(size_t index, Pred pred) const {
 Statistic DataStats::GetMinNumberOfChars(size_t index) const {
     if (all_stats_[index].min_num_chars.HasValue()) return all_stats_[index].min_num_chars;
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     return GetStringMinOf(index, [](std::string const& line) { return line.size(); });
 }
@@ -664,9 +717,29 @@ Statistic DataStats::GetMinNumberOfChars(size_t index) const {
 Statistic DataStats::GetMaxNumberOfChars(size_t index) const {
     if (all_stats_[index].max_num_chars.HasValue()) return all_stats_[index].max_num_chars;
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     return GetStringMaxOf(index, [](std::string const& line) { return line.size(); });
+}
+
+Statistic DataStats::GetMinWhiteSpaces(size_t index) const {
+    if (all_stats_[index].min_white_spaces.HasValue()) return all_stats_[index].min_white_spaces;
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+
+    return GetStringMinOf(index, [](std::string const& line) {
+        return std::count(line.begin(), line.end(), ' ');
+    });
+}
+
+Statistic DataStats::GetMaxWhiteSpaces(size_t index) const {
+    if (all_stats_[index].max_white_spaces.HasValue()) return all_stats_[index].max_white_spaces;
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+
+    return GetStringMaxOf(index, [](std::string const& line) {
+        return std::count(line.begin(), line.end(), ' ');
+    });
 }
 
 std::vector<std::string> DataStats::GetWordsInString(std::string line) {
@@ -678,7 +751,7 @@ std::vector<std::string> DataStats::GetWordsInString(std::string line) {
 
 std::set<std::string> DataStats::GetWords(size_t index) const {
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     mo::StringType string_type;
     std::set<std::string> words;
@@ -707,7 +780,7 @@ Statistic DataStats::GetMinNumberOfWords(size_t index) const {
     if (all_stats_[index].min_num_words.HasValue()) return all_stats_[index].min_num_words;
 
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     return GetStringMinOf(index,
                           [](std::string const& line) { return GetNumberOfWordsInString(line); });
@@ -716,7 +789,7 @@ Statistic DataStats::GetMinNumberOfWords(size_t index) const {
 Statistic DataStats::GetMaxNumberOfWords(size_t index) const {
     if (all_stats_[index].max_num_words.HasValue()) return all_stats_[index].max_num_words;
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     return GetStringMaxOf(index,
                           [](std::string const& line) { return GetNumberOfWordsInString(line); });
@@ -725,15 +798,52 @@ Statistic DataStats::GetMaxNumberOfWords(size_t index) const {
 Statistic DataStats::GetNumberOfWords(size_t index) const {
     if (all_stats_[index].num_words.HasValue()) return all_stats_[index].num_words;
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     return GetStringSumOf(index,
                           [](std::string const& line) { return GetNumberOfWordsInString(line); });
 }
 
+Statistic DataStats::GetNumberOfDiacriticChars(size_t index) const {
+    if (all_stats_[index].num_diacritic_chars.HasValue())
+        return all_stats_[index].num_diacritic_chars;
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+
+    UErrorCode err = U_ZERO_ERROR;
+    icu::Normalizer2 const* norm = icu::Normalizer2::getNFDInstance(err);
+
+    if (U_FAILURE(err) || norm == nullptr) return {};
+
+    size_t count = 0;
+
+    for (size_t i = 0; i < col.GetNumRows(); ++i) {
+        if (col.IsNullOrEmpty(i)) continue;
+
+        std::string const& str = mo::Type::GetValue<std::string>(col.GetValue(i));
+
+        icu::UnicodeString ustr = icu::UnicodeString::fromUTF8(str);
+
+        icu::UnicodeString decomposed = norm->normalize(ustr, err);
+
+        for (int32_t pos = 0; pos < decomposed.length();) {
+            UChar32 c = decomposed.char32At(pos);
+            pos += U16_LENGTH(c);
+
+            if (u_charType(c) == U_NON_SPACING_MARK) {
+                count++;
+            }
+        }
+    }
+
+    mo::IntType int_type;
+    std::byte const* res = int_type.MakeValue(count);
+    return Statistic(res, &int_type, false);
+}
+
 std::vector<char> DataStats::GetTopKChars(size_t index, size_t k) const {
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     mo::StringType string_type;
     std::unordered_map<char, size_t> count_chars;
@@ -768,7 +878,7 @@ std::vector<char> DataStats::GetTopKChars(size_t index, size_t k) const {
 
 std::vector<std::string> DataStats::GetTopKWords(size_t index, size_t k) const {
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     mo::StringType string_type;
     std::unordered_map<std::string, size_t> count_words;
@@ -844,7 +954,7 @@ bool DataStats::IsEntirelyLowercase(std::string word) {
 template <class Pred>
 Statistic DataStats::CountIfInColumnForWords(Pred pred, size_t index) const {
     mo::TypedColumnData const& col = col_data_[index];
-    if (col.GetTypeId() != +mo::TypeId::kString) return {};
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
 
     std::size_t count = 0;
     std::string string_data;
@@ -863,29 +973,170 @@ Statistic DataStats::CountIfInColumnForWords(Pred pred, size_t index) const {
     return Statistic(res, &int_type, false);
 }
 
-unsigned long long DataStats::ExecuteInternal() {
-    if (all_stats_.empty()) {
-        // Table has 0 columns, nothing to do
-        return 0;
+Statistic DataStats::GetWhitespaceOnlyCount(size_t index) const {
+    if (all_stats_[index].whitespace_only_count.HasValue())
+        return all_stats_[index].whitespace_only_count;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+
+    size_t count = 0;
+
+    for (size_t i = 0; i < col.GetNumRows(); i++) {
+        if (col.IsNullOrEmpty(i)) continue;
+
+        auto const& str = mo::Type::GetValue<std::string>(col.GetValue(i));
+
+        if (!str.empty() && std::all_of(str.begin(), str.end(), [](char c) {
+                return std::isspace(static_cast<unsigned char>(c));
+            })) {
+            count++;
+        }
     }
 
-    auto start_time = std::chrono::system_clock::now();
-    double percent_per_col = kTotalProgressPercent / all_stats_.size();
-    auto task = [percent_per_col, this](size_t index) {
+    mo::IntType int_type;
+    std::byte const* res = int_type.MakeValue(count);
+    return Statistic(res, &int_type, false);
+}
+
+Statistic DataStats::GetWhitespaceCount(size_t index, CharPosition pos) const {
+    auto& stat_cache = (pos == CharPosition::kFirst) ? all_stats_[index].leading_whitespace_count
+                                                     : all_stats_[index].trailing_whitespace_count;
+
+    if (stat_cache.HasValue()) return stat_cache;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+
+    size_t count = 0;
+    auto check_whitespace = [pos](std::string const& str) {
+        if (str.empty()) return false;
+
+        char char_to_check = (pos == CharPosition::kFirst) ? str[0] : str.back();
+        return static_cast<bool>(std::isspace(static_cast<unsigned char>(char_to_check)));
+    };
+
+    for (size_t i = 0; i < col.GetNumRows(); i++) {
+        if (col.IsNullOrEmpty(i)) continue;
+
+        auto const& str = mo::Type::GetValue<std::string>(col.GetValue(i));
+        if (check_whitespace(str)) {
+            count++;
+        }
+    }
+
+    mo::IntType int_type;
+    std::byte const* res = int_type.MakeValue(count);
+    return Statistic(res, &int_type, false);
+}
+
+Statistic DataStats::GetNumberOfRowsWithLeadingWhitespace(size_t index) const {
+    return GetWhitespaceCount(index, CharPosition::kFirst);
+}
+
+Statistic DataStats::GetNumberOfRowsWithTrailingWhitespace(size_t index) const {
+    return GetWhitespaceCount(index, CharPosition::kLast);
+}
+
+Statistic DataStats::GetNumberOfRowsWithSpecialChars(size_t index) const {
+    if (all_stats_[index].special_chars_count.HasValue())
+        return all_stats_[index].special_chars_count;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+    static constexpr std::string_view const kSpecialChars = "@#$%^&!?*_+=~'-\"";
+    size_t count = 0;
+
+    static constexpr std::array<bool, 256> kMap = []() constexpr {
+        std::array<bool, 256> map = {0};
+        for (char c : kSpecialChars) {
+            map[static_cast<unsigned char>(c)] = true;
+        }
+        return map;
+    }();
+
+    for (size_t i = 0; i < col.GetNumRows(); i++) {
+        if (col.IsNullOrEmpty(i)) continue;
+
+        auto const& str = mo::Type::GetValue<std::string>(col.GetValue(i));
+
+        if (std::any_of(str.begin(), str.end(),
+                        [](char c) { return kMap[static_cast<unsigned char>(c)]; })) {
+            count++;
+        }
+    }
+
+    mo::IntType int_type;
+    std::byte const* res = int_type.MakeValue(count);
+    return Statistic(res, &int_type, false);
+}
+
+Statistic DataStats::GetCharFrequency(size_t index, CharPosition pos) const {
+    if ((pos == CharPosition::kFirst && all_stats_[index].first_char_freq.HasValue()) ||
+        (pos == CharPosition::kLast && all_stats_[index].last_char_freq.HasValue())) {
+        return pos == CharPosition::kFirst ? all_stats_[index].first_char_freq
+                                           : all_stats_[index].last_char_freq;
+    }
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+
+    std::unordered_map<char, size_t> freq_map;
+
+    for (size_t i = 0; i < col.GetNumRows(); i++) {
+        if (col.IsNullOrEmpty(i)) continue;
+
+        auto const& str = mo::Type::GetValue<std::string>(col.GetValue(i));
+        if (str.empty()) continue;
+
+        char c = (pos == CharPosition::kFirst) ? str.front() : str.back();
+        freq_map[c]++;
+    }
+    assert(freq_map.size() != 0);
+
+    auto const& [most_frequent, max_freq] = *std::max_element(
+            freq_map.begin(), freq_map.end(), [](auto const& lhs, auto const& rhs) {
+                return std::tie(lhs.second, lhs.first) < std::tie(rhs.second, rhs.first);
+            });
+
+    if (max_freq == 0) return {};
+
+    std::string result = std::string(1, most_frequent) + ":" + std::to_string(max_freq);
+    mo::StringType string_type;
+    std::byte const* res = string_type.MakeValue(result);
+    return Statistic(res, &string_type, false);
+}
+
+Statistic DataStats::GetFirstCharFrequency(size_t index) const {
+    return GetCharFrequency(index, CharPosition::kFirst);
+}
+
+Statistic DataStats::GetLastCharFrequency(size_t index) const {
+    return GetCharFrequency(index, CharPosition::kLast);
+}
+
+void DataStats::ExecuteInternal() {
+    if (all_stats_.empty()) {
+        // Table has 0 columns, nothing to do
+        return;
+    }
+
+    auto task = [this](size_t index) {
         all_stats_[index].count = NumberOfValues(index);
-        if (this->col_data_[index].GetTypeId() != +mo::TypeId::kMixed) {
+        if (this->col_data_[index].GetTypeId() != mo::TypeId::kMixed) {
             all_stats_[index].min = GetMin(index);
             all_stats_[index].max = GetMax(index);
             all_stats_[index].sum = GetSum(index);
             // will use all_stats_[index].sum
             all_stats_[index].avg = GetAvg(index);
 
-            GetQuantile(0.25, index, true);  // distint is calculated here
+            GetQuantile(0.25, index, true);  // distinct is calculated here
             // after distinct, for faster executing
             all_stats_[index].kurtosis = GetKurtosis(index);
             all_stats_[index].skewness = GetSkewness(index);
             all_stats_[index].STD = GetCorrectedSTD(index);
             all_stats_[index].num_zeros = GetNumberOfZeros(index);
+            all_stats_[index].zero_percent = GetZeroPercent(index);
             all_stats_[index].num_negatives = GetNumberOfNegatives(index);
             all_stats_[index].sum_of_squares = GetSumOfSquares(index);
             all_stats_[index].geometric_mean = GetGeometricMean(index);
@@ -906,12 +1157,31 @@ unsigned long long DataStats::ExecuteInternal() {
             all_stats_[index].num_words = GetNumberOfWords(index);
             all_stats_[index].num_entirely_uppercase = GetNumberOfEntirelyUppercaseWords(index);
             all_stats_[index].num_entirely_lowercase = GetNumberOfEntirelyLowercaseWords(index);
+            all_stats_[index].entropy = GetEntropy(index);
+            all_stats_[index].gini_coefficient = GetGiniCoefficient(index);
+            all_stats_[index].interquartile_range = GetInterquartileRange(index);
+            all_stats_[index].coefficient_of_variation = GetCoefficientOfVariation(index);
+            all_stats_[index].jarque_bera_statistic = GetJarqueBeraStatistic(index);
+            all_stats_[index].monotonicity = GetMonotonicity(index);
+            all_stats_[index].whitespace_only_count = GetWhitespaceOnlyCount(index);
+            all_stats_[index].leading_whitespace_count =
+                    GetNumberOfRowsWithLeadingWhitespace(index);
+            all_stats_[index].trailing_whitespace_count =
+                    GetNumberOfRowsWithTrailingWhitespace(index);
+            all_stats_[index].special_chars_count = GetNumberOfRowsWithSpecialChars(index);
+            all_stats_[index].first_char_freq = GetFirstCharFrequency(index);
+            all_stats_[index].last_char_freq = GetLastCharFrequency(index);
+            all_stats_[index].min_white_spaces = GetMinWhiteSpaces(index);
+            all_stats_[index].max_white_spaces = GetMaxWhiteSpaces(index);
+            all_stats_[index].num_diacritic_chars = GetNumberOfDiacriticChars(index);
+            // boolean counts
+            all_stats_[index].true_count = GetTrueCount(index);
+            all_stats_[index].false_count = GetFalseCount(index);
         }
-        // distinct for mixed type will be calculated here
+
         all_stats_[index].is_categorical = IsCategorical(
                 index, std::min(all_stats_[index].count - 1, 10 + all_stats_[index].count / 1000));
         all_stats_[index].type = this->col_data_[index].GetType().ToString().substr(1);
-        AddProgress(percent_per_col);
     };
 
     if (threads_num_ > 1) {
@@ -922,11 +1192,6 @@ unsigned long long DataStats::ExecuteInternal() {
     } else {
         for (size_t i = 0; i < all_stats_.size(); ++i) task(i);
     }
-
-    SetProgress(kTotalProgressPercent);
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    return elapsed_milliseconds.count();
 }
 
 size_t DataStats::GetNumNulls(size_t index) const {
@@ -984,6 +1249,180 @@ std::string DataStats::ToString() const {
 void DataStats::LoadDataInternal() {
     col_data_ = mo::CreateTypedColumnData(*input_table_, is_null_equal_null_);
     all_stats_ = std::vector<ColumnStats>{col_data_.size()};
+}
+
+Statistic DataStats::GetInterquartileRange(size_t index) const {
+    if (all_stats_[index].interquartile_range.HasValue())
+        return all_stats_[index].interquartile_range;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (!col.IsNumeric()) return {};
+
+    Statistic q1 = all_stats_[index].quantile25;
+    Statistic q3 = all_stats_[index].quantile75;
+
+    if (!q1.HasValue() || !q3.HasValue()) return {};
+
+    mo::DoubleType double_type;
+    std::byte* q1_val = mo::DoubleType::MakeFrom(q1.GetData(), *q1.GetType());
+    std::byte* q3_val = mo::DoubleType::MakeFrom(q3.GetData(), *q3.GetType());
+    std::byte* iqr_val = double_type.Allocate();
+
+    double_type.Sub(q3_val, q1_val, iqr_val);
+
+    double_type.Free(q1_val);
+    double_type.Free(q3_val);
+
+    return Statistic(iqr_val, &double_type, false);
+}
+
+Statistic DataStats::GetCoefficientOfVariation(size_t index) const {
+    if (all_stats_[index].coefficient_of_variation.HasValue())
+        return all_stats_[index].coefficient_of_variation;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (!col.IsNumeric()) return {};
+
+    if (!all_stats_[index].STD.HasValue() || !all_stats_[index].avg.HasValue()) return {};
+
+    mo::DoubleType double_type;
+    std::byte* std_val = mo::DoubleType::MakeFrom(all_stats_[index].STD.GetData(),
+                                                  *all_stats_[index].STD.GetType());
+    std::byte* mean_val = mo::DoubleType::MakeFrom(all_stats_[index].avg.GetData(),
+                                                   *all_stats_[index].avg.GetType());
+
+    std::byte* zero = double_type.MakeValue(0.0);
+    if (double_type.Compare(mean_val, zero) == mo::CompareResult::kEqual) {
+        double_type.Free(std_val);
+        double_type.Free(mean_val);
+        double_type.Free(zero);
+        return {};
+    }
+
+    std::byte* cv_val = double_type.Allocate();
+    double_type.Div(std_val, mean_val, cv_val);
+
+    double_type.Free(std_val);
+    double_type.Free(mean_val);
+    double_type.Free(zero);
+
+    return Statistic(cv_val, &double_type, false);
+}
+
+Statistic DataStats::GetMonotonicity(size_t index) const {
+    if (all_stats_[index].monotonicity.HasValue()) return all_stats_[index].monotonicity;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (!mo::Type::IsOrdered(col.GetTypeId())) return {};
+
+    bool increasing = true;
+    bool decreasing = true;
+    std::byte const* prev = nullptr;
+    for (size_t i = 0; i < col.GetNumRows(); ++i) {
+        if (col.IsNullOrEmpty(i)) continue;
+        std::byte const* current = col.GetData()[i];
+        if (prev != nullptr) {
+            mo::CompareResult cmp = col.GetType().Compare(prev, current);
+            if (cmp == mo::CompareResult::kLess) {
+                decreasing = false;
+            } else if (cmp == mo::CompareResult::kGreater) {
+                increasing = false;
+            }
+            if (!increasing && !decreasing) break;
+        }
+        prev = current;
+    }
+    if (prev == nullptr) return {};
+
+    std::string result = (increasing && decreasing) ? "equal"
+                         : increasing               ? "ascending"
+                         : decreasing               ? "descending"
+                                                    : "none";
+
+    mo::StringType string_type;
+    std::byte const* result_data = string_type.MakeValue(result);
+
+    return Statistic(result_data, &string_type, false);
+}
+
+Statistic DataStats::GetJarqueBeraStatistic(size_t index) const {
+    if (all_stats_[index].jarque_bera_statistic.HasValue())
+        return all_stats_[index].jarque_bera_statistic;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (!col.IsNumeric()) return {};
+
+    if (!all_stats_[index].skewness.HasValue() || !all_stats_[index].kurtosis.HasValue()) return {};
+
+    size_t n = NumberOfValues(index);
+    if (n < 2) return {};
+
+    double skewness = mo::Type::GetValue<mo::Double>(all_stats_[index].skewness.GetData());
+    double kurtosis = mo::Type::GetValue<mo::Double>(all_stats_[index].kurtosis.GetData());
+
+    double jb = static_cast<double>(n) / 6.0 *
+                (skewness * skewness + (kurtosis - 3.0) * (kurtosis - 3.0) / 4.0);
+
+    mo::DoubleType double_type;
+    return Statistic(double_type.MakeValue(jb), &double_type, false);
+}
+
+Statistic DataStats::GetEntropy(size_t index) const {
+    if (all_stats_[index].entropy.HasValue()) return all_stats_[index].entropy;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+
+    std::unordered_map<std::string, size_t> freq_map;
+    size_t total_count = 0;
+
+    for (size_t i = 0; i < col.GetNumRows(); ++i) {
+        if (col.IsNullOrEmpty(i)) continue;
+
+        std::string value = mo::Type::GetValue<std::string>(col.GetValue(i));
+        freq_map[value]++;
+        total_count++;
+    }
+
+    if (total_count == 0) return {};
+
+    double entropy = 0.0;
+    for (auto const& [value, count] : freq_map) {
+        double probability = static_cast<double>(count) / static_cast<double>(total_count);
+        entropy -= probability * std::log2(probability);
+    }
+
+    mo::DoubleType double_type;
+    return Statistic(double_type.MakeValue(entropy), &double_type, false);
+}
+
+Statistic DataStats::GetGiniCoefficient(size_t index) const {
+    if (all_stats_[index].gini_coefficient.HasValue()) return all_stats_[index].gini_coefficient;
+
+    mo::TypedColumnData const& col = col_data_[index];
+    if (col.GetTypeId() != mo::TypeId::kString) return {};
+
+    std::unordered_map<std::string, size_t> freq_map;
+    size_t total_count = 0;
+
+    for (size_t i = 0; i < col.GetNumRows(); ++i) {
+        if (col.IsNullOrEmpty(i)) continue;
+
+        std::string value = mo::Type::GetValue<std::string>(col.GetValue(i));
+        freq_map[value]++;
+        total_count++;
+    }
+
+    if (total_count == 0) return {};
+
+    double gini = 1.0;
+    for (auto const& [value, count] : freq_map) {
+        double probability = static_cast<double>(count) / static_cast<double>(total_count);
+        gini -= probability * probability;
+    }
+
+    mo::DoubleType double_type;
+    return Statistic(double_type.MakeValue(gini), &double_type, false);
 }
 
 }  // namespace algos

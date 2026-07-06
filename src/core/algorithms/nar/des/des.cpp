@@ -1,28 +1,27 @@
-#include "des.h"
+#include "core/algorithms/nar/des/des.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <vector>
 
-#include "algorithms/nar/value_range.h"
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/tabular_data/input_table/option.h"
-#include "model/types/types.h"
+#include "core/algorithms/nar/value_range.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/model/types/types.h"
 
 namespace algos::des {
 using model::ValueRange;
 
-DES::DES() : NARAlgorithm({}) {
+DES::DES() : NARAlgorithm() {
     RegisterOptions();
 }
 
 void DES::RegisterOptions() {
     DESBORDANTE_OPTION_USING;
 
-    DifferentialStrategy default_strategy = DifferentialStrategy::rand1Bin;
+    DifferentialStrategy default_strategy = DifferentialStrategy::kRand1Bin;
     RegisterOption(Option{&seed_, kSeed, kDSeed, 2ul});
     RegisterOption(Option{&population_size_, kPopulationSize, kDPopulationSize, 100u});
     RegisterOption(
@@ -70,9 +69,8 @@ EncodedNAR DES::MutatedIndividual(std::vector<EncodedNAR> const& population, siz
     return (*diff_func)(population, at, differential_options_, rng);
 }
 
-unsigned long long DES::ExecuteInternal() {
+void DES::ExecuteInternal() {
     rng_.SetSeed(seed_);
-    auto const start_time = std::chrono::system_clock::now();
 
     FeatureDomains feature_domains = FindFeatureDomains(typed_relation_.get());
     std::vector<EncodedNAR> population = GetRandomPopulationInDomains(feature_domains, rng_);
@@ -95,10 +93,6 @@ unsigned long long DES::ExecuteInternal() {
         return a.GetQualities().fitness > b.GetQualities().fitness;
     };
     std::ranges::sort(nar_collection_, compare_by_fitness);
-
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    return elapsed_milliseconds.count();
 }
 
 }  // namespace algos::des

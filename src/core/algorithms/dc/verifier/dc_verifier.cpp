@@ -1,7 +1,6 @@
-#include "algorithms/dc/verifier/dc_verifier.h"
+#include "core/algorithms/dc/verifier/dc_verifier.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <ctime>
@@ -15,20 +14,20 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <easylogging++.h>
 
-#include "algorithms/dc/model/component.h"
-#include "algorithms/dc/model/point.h"
-#include "algorithms/dc/model/predicate.h"
-#include "algorithms/dc/parser/dc_parser.h"
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/tabular_data/input_table/option.h"
-#include "model/table/column_index.h"
-#include "model/table/column_layout_relation_data.h"
-#include "table/typed_column_data.h"
-#include "util/get_preallocated_vector.h"
-#include "util/kdtree.h"
+#include "core/algorithms/dc/model/component.h"
+#include "core/algorithms/dc/model/point.h"
+#include "core/algorithms/dc/model/predicate.h"
+#include "core/algorithms/dc/parser/dc_parser.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/model/table/column_index.h"
+#include "core/model/table/column_layout_relation_data.h"
+#include "core/model/table/typed_column_data.h"
+#include "core/util/get_preallocated_vector.h"
+#include "core/util/kdtree.h"
+#include "core/util/logger.h"
 
 namespace algos {
 
@@ -37,7 +36,7 @@ namespace mo = model;
 using Point = dc::Point<dc::Component>;
 using Tree = util::KDTree<Point>;
 
-DCVerifier::DCVerifier() : Algorithm({}) {
+DCVerifier::DCVerifier() : Algorithm() {
     using namespace config::names;
 
     RegisterOptions();
@@ -61,18 +60,17 @@ void DCVerifier::MakeExecuteOptsAvailable() {
 void DCVerifier::LoadDataInternal() {
     data_ = model::CreateTypedColumnData(*input_table_, true);
     input_table_->Reset();
-    relation_ = ColumnLayoutRelationData::CreateFrom(*input_table_, true);
+    relation_ = ColumnLayoutRelationData::CreateFrom(*input_table_);
 }
 
-unsigned long long int DCVerifier::ExecuteInternal() {
-    auto start = std::chrono::system_clock::now();
+void DCVerifier::ExecuteInternal() {
     dc::DC dc;
     try {
         dc::DCParser parser = dc::DCParser(dc_string_, relation_.get(), data_);
         dc = parser.Parse();
     } catch (std::exception const& e) {
-        LOG(INFO) << e.what();
-        return 0;
+        LOG_INFO("{}", e.what());
+        return;
     }
 
     std::string col_name = relation_->GetSchema()->GetColumns().front().get()->GetName();
@@ -80,11 +78,6 @@ unsigned long long int DCVerifier::ExecuteInternal() {
     bool has_header = !boost::regex_match(col_name, re);
     index_offset_ = 1 + static_cast<size_t>(has_header);
     result_ = Verify(dc);
-
-    auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start);
-
-    return elapsed_time.count();
 }
 
 bool DCVerifier::Verify(dc::DC dc) {
@@ -110,7 +103,7 @@ bool DCVerifier::Verify(dc::DC dc) {
     if (dc_type == dc::DCType::kOneInequality and do_collect_violations_ == true)
         dc_type = dc::DCType::kTwoTuples;
 
-    auto check = kDCTypeToVerificationMethod.at(dc_type);
+    auto check = kDCTypeToVerificationMethod.At(dc_type);
 
     // TODO: check the article for optimization 2^l -> 2^(l-1) dc's
 
@@ -428,7 +421,7 @@ std::pair<util::Rect<Point>, util::Rect<Point>> DCVerifier::SearchRanges(
 
 bool DCVerifier::Eval(std::vector<std::byte const*> row, std::vector<dc::Predicate> preds) const {
     dc::Component left_comp, right_comp;
-    std::byte const* left_val;
+    std::byte const* left_val = nullptr;
     std::byte const* right_val;
     for (auto const& pred : preds) {
         dc::ColumnOperand left_op = pred.GetLeftOperand();

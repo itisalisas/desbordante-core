@@ -1,10 +1,11 @@
-#include "bind_statistics.h"
+#include "python_bindings/statistics/bind_statistics.h"
 
 #include <pybind11/pybind11.h>
+
 #include <pybind11/stl.h>
 
-#include "algorithms/statistics/data_stats.h"
-#include "py_util/bind_primitive.h"
+#include "core/algorithms/statistics/data_stats.h"
+#include "python_bindings/py_util/bind_primitive.h"
 
 namespace {
 namespace py = pybind11;
@@ -45,6 +46,11 @@ public:
             case TypeId::kString: {
                 auto const& str = Type::GetValue<String>(data);
                 return PyUnicode_FromStringAndSize(str.data(), str.size());
+            }
+            case TypeId::kBool: {
+                bool v;
+                std::memcpy(&v, stat.GetData(), sizeof(bool));
+                return PyBool_FromLong(static_cast<long>(v));
             }
             default:
                 assert(false);
@@ -166,6 +172,50 @@ void BindStatistics(pybind11::module_& main_module) {
                  "Returns the amount of entirely lowercase words in a column.", py::arg("index"))
             .def("get_number_of_entirely_uppercase_words",
                  &DataStats::GetNumberOfEntirelyUppercaseWords,
-                 "Returns the amount of entirely uppercase words in a column.", py::arg("index"));
+                 "Returns the amount of entirely uppercase words in a column.", py::arg("index"))
+            .def("get_interquartile_range", &DataStats::GetInterquartileRange,
+                 "Returns interquartile range (IQR) for numeric column.", py::arg("index"))
+            .def("get_coefficient_of_variation", &DataStats::GetCoefficientOfVariation,
+                 "Returns coefficient of variation (std/mean) for numeric column.",
+                 py::arg("index"))
+            .def("get_monotonicity", &DataStats::GetMonotonicity,
+                 "Returns monotonicity flag: 'ascending', 'descending', 'equal' or 'none'.",
+                 py::arg("index"))
+            .def("get_jarque_bera_statistic", &DataStats::GetJarqueBeraStatistic,
+                 "Returns Jarque-Bera statistic for normality test.", py::arg("index"))
+            .def("get_entropy", &DataStats::GetEntropy,
+                 "Returns Shannon entropy for categorical column.", py::arg("index"))
+            .def("get_gini_coefficient", &DataStats::GetGiniCoefficient,
+                 "Returns Gini coefficient for categorical column.", py::arg("index"))
+            .def("get_whitespace_only_count", &DataStats::GetWhitespaceOnlyCount,
+                 "Returns the number of rows that consist only of whitespace characters (spaces "
+                 "and tabs).",
+                 py::arg("index"))
+            .def("get_leading_whitespace_count", &DataStats::GetNumberOfRowsWithLeadingWhitespace,
+                 "Returns the number of rows that have leading whitespace characters.",
+                 py::arg("index"))
+            .def("get_trailing_whitespace_count", &DataStats::GetNumberOfRowsWithTrailingWhitespace,
+                 "Returns the number of rows that have trailing whitespace characters.",
+                 py::arg("index"))
+            .def("get_special_chars_count", &DataStats::GetNumberOfRowsWithSpecialChars,
+                 "Returns the number of rows that contain special characters.", py::arg("index"))
+            .def("get_first_char_frequency", &DataStats::GetFirstCharFrequency,
+                 "Returns the most frequent first character and its count as a string in format.",
+                 py::arg("index"))
+            .def("get_last_char_frequency", &DataStats::GetLastCharFrequency,
+                 "Returns the most frequent last character and its count as a string in format.",
+                 py::arg("index"))
+            .def("get_min_white_spaces", &DataStats::GetMinWhiteSpaces,
+                 "Returns minimum number of whitespaces in a string column.", py::arg("index"))
+            .def("get_max_white_spaces", &DataStats::GetMaxWhiteSpaces,
+                 "Returns maximum number of whitespaces in a string column.", py::arg("index"))
+            .def("get_true_count", &DataStats::GetTrueCount,
+                 "Returns number of true values in a boolean column.", py::arg("index"))
+            .def("get_false_count", &DataStats::GetFalseCount,
+                 "Returns number of false values in a boolean column.", py::arg("index"))
+            .def("get_zero_percent", &DataStats::GetZeroPercent,
+                 "Returns fraction of zero values in a numeric column.", py::arg("index"))
+            .def("get_number_of_diacritic_chars", &DataStats::GetNumberOfDiacriticChars,
+                 "Returns number of diacritic characters in a string column.", py::arg("index"));
 }
 }  // namespace python_bindings

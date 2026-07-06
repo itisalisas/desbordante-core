@@ -1,8 +1,8 @@
 #pragma once
 
-#include <enum.h>
+#include <magic_enum/magic_enum.hpp>
 
-#include "algorithms/algorithms.h"
+#include "core/algorithms/algorithms.h"
 
 namespace algos {
 
@@ -10,98 +10,116 @@ using AlgorithmTypes =
         std::tuple<Depminer, DFD, FastFDs, FDep, FdMine, Pyro, Tane, PFDTane, FUN, hyfd::HyFD, Aid,
                    EulerFD, Apriori, des::DES, metric::MetricVerifier, DataStats,
                    fd_verifier::FDVerifier, HyUCC, PyroUCC, HPIValid, cfd::FDFirstAlgorithm,
-                   ACAlgorithm, UCCVerifier, Faida, Spider, Mind, INDVerifier, Fastod, GfdValidator,
-                   EGfdValidator, NaiveGfdValidator, order::Order, dd::Split, Cords, hymd::HyMD,
-                   PFDVerifier, cfd_verifier::CFDVerifier>;
+                   ACAlgorithm, UCCVerifier, Faida, Spider, Mind, INDVerifier, cind::CINDVerifier,
+                   Fastod, GfdValidator, EGfdValidator, NaiveGfdValidator, order::Order, dd::Split,
+                   Cords, hymd::HyMD, PFDVerifier, cfd_verifier::CFDVerifier,
+                   ar_verifier::ARVerifier, GSpan, sd_verifier::SDVerifier, maxfem::MaxFEM,
+                   pattern_fd::PatternFDVerifier>;
 
-// clang-format off
 /* Enumeration of all supported non-pipeline algorithms. If you implement a new
  * algorithm please add its corresponding value to this enum and to the type
  * tuple above.
  * NOTE: algorithm string name representation is taken from the value in this
  * enum, so name it appropriately (lowercase and without additional symbols).
  */
-BETTER_ENUM(AlgorithmType, char,
-/* Functional dependency mining algorithms */
-    depminer = 0,
-    dfd,
-    fastfds,
-    fdep,
-    fdmine,
-    pyro,
-    tane,
-    pfdtane,
-    fun,
-    hyfd,
-    aidfd,
-    eulerfd,
+enum class AlgorithmType : char {
+    /* Functional dependency mining algorithms */
+    kDepminer = 0,
+    kDfd,
+    kFastfds,
+    kFdep,
+    kFdmine,
+    kPyro,
+    kTane,
+    kPfdtane,
+    kFun,
+    kHyfd,
+    kAidfd,
+    kEulerfd,
 
-/* Association rules mining algorithms */
-    apriori,
+    /* Association rules mining algorithms */
+    kApriori,
 
-/* Numerical association rules mining algorithms*/
-    des,
+    /* Numerical association rules mining algorithms*/
+    kDes,
 
-/* Metric verifier algorithm */
-    metric,
+    /* Metric verifier algorithm */
+    kMetric,
 
-/* Statistic algorithms */
-    stats,
+    /* Statistic algorithms */
+    kStats,
 
-/* FD verifier algorithm */
-    fd_verifier,
+    /* FD verifier algorithm */
+    kFdVerifier,
 
-/* Unique Column Combination mining algorithms */
-    hyucc,
-    pyroucc,
-    hpivalid,
+    /* Unique Column Combination mining algorithms */
+    kHyucc,
+    kPyroucc,
+    kHpivalid,
 
-/* CFD mining algorithms */
-    fd_first_dfs,
+    /* CFD mining algorithms */
+    kFdFirstDfs,
 
-/* Algebraic constraints mining algorithm*/
-    ac,
+    /* Algebraic constraints mining algorithm*/
+    kAc,
 
-/* UCC verifier algorithm */
-    ucc_verifier,
+    /* UCC verifier algorithm */
+    kUccVerifier,
 
-/* Inclusion dependency mining algorithms */
-    faida,
-    spider,
-    mind,
+    /* Inclusion dependency mining algorithms */
+    kFaida,
+    kSpider,
+    kMind,
 
-/* IND verifier algorithm */
-    ind_verifier,
+    /* IND verifier algorithm */
+    kIndVerifier,
 
-/* Order dependency mining algorithms */
-    fastod,
+    /* CIND verifier algorithm */
+    cind_verifier,
 
-/* Graph functional dependency mining algorithms */
-    gfdvalid,
-    egfdvalid,
-    naivegfdvalid,
+    /* Order dependency mining algorithms */
+    kFastod,
 
-/* Order dependency mining algorithms */
-    order,
+    /* Graph functional dependency mining algorithms */
+    kGfdvalid,
+    kEgfdvalid,
+    kNaivegfdvalid,
 
-/* Differential dependencies mining algorithm */
-    split,
+    /* Order dependency mining algorithms */
+    kOrder,
 
-/* SFD mining algorithm */
-    cords,
+    /* Differential dependencies mining algorithm */
+    kSplit,
 
-/* MD mining algorithms */
-    hymd,
+    /* SFD mining algorithm */
+    kCords,
 
-/* PFD verifier algorithm */
-    pfd_verifier,
+    /* MD mining algorithms */
+    kHymd,
 
-/* CFD verifier algorithm */
-    cfd_verifier
-)
-// clang-format on
+    /* PFD verifier algorithm */
+    kPfdVerifier,
 
-static_assert(std::tuple_size_v<AlgorithmTypes> == AlgorithmType::_size(),
+    /* CFD verifier algorithm */
+    kCfdVerifier,
+
+    /* AR verifier algorithm */
+    kArVerifier,
+
+    /* Frequent subgraph mining algorithms*/
+    kGspan,
+
+    /* SD verifier algorithm */
+    kSdVerifier,
+
+    /* Frequent episode mining algorithms*/
+    kMaxfem,
+
+    /* Pattern FD verifier algorithm */
+    kPatternFdVerifier
+};
+
+static_assert(std::tuple_size_v<AlgorithmTypes> == magic_enum::enum_count<AlgorithmType>(),
               "The AlgorithmTypes tuple and the AlgorithmType enum sizes must be the same. Did you "
               "forget to add your new algorithm to either of those?");
 

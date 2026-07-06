@@ -5,9 +5,9 @@
 #include <utility>
 #include <vector>
 
-#include "algorithms/algorithm.h"
-#include "cfd_stats_calculator.h"
-#include "config/tabular_data/input_table_type.h"
+#include "core/algorithms/algorithm.h"
+#include "core/algorithms/cfd/cfd_verifier/cfd_stats_calculator.h"
+#include "core/config/tabular_data/input_table_type.h"
 
 namespace algos::cfd_verifier {
 
@@ -41,7 +41,7 @@ private:
 protected:
     void LoadDataInternal() override;
     void MakeExecuteOptsAvailable() override;
-    unsigned long long ExecuteInternal() override;
+    void ExecuteInternal() override;
 
 public:
     CFDVerifier();

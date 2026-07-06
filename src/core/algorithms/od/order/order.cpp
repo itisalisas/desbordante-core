@@ -1,23 +1,22 @@
-#include "order.h"
+#include "core/algorithms/od/order/order.h"
 
 #include <algorithm>
 #include <iostream>
 #include <memory>
 #include <utility>
 
-#include <easylogging++.h>
-
-#include "config/names_and_descriptions.h"
-#include "config/tabular_data/input_table/option.h"
-#include "dependency_checker.h"
-#include "list_lattice.h"
-#include "model/table/tuple_index.h"
-#include "model/types/types.h"
-#include "order_utility.h"
+#include "core/algorithms/od/order/dependency_checker.h"
+#include "core/algorithms/od/order/list_lattice.h"
+#include "core/algorithms/od/order/order_utility.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/model/table/tuple_index.h"
+#include "core/model/types/types.h"
+#include "core/util/logger.h"
 
 namespace algos::order {
 
-Order::Order() : Algorithm({}) {
+Order::Order() : Algorithm() {
     RegisterOptions();
     MakeOptionsAvailable({config::kTableOpt.GetName()});
 }
@@ -63,13 +62,13 @@ void Order::CreateSingleColumnSortedPartitions() {
         std::unique_ptr<model::MixedType> mixed_type =
                 model::CreateSpecificType<model::MixedType>(model::TypeId::kMixed, true);
         auto less = [&type, &mixed_type](IndexedByteData const& l, IndexedByteData const& r) {
-            if (type->GetTypeId() == +(model::TypeId::kMixed)) {
+            if (type->GetTypeId() == (model::TypeId::kMixed)) {
                 return mixed_type->CompareAsStrings(l.data, r.data) == model::CompareResult::kLess;
             }
             return type->Compare(l.data, r.data) == model::CompareResult::kLess;
         };
         auto equal = [&type, &mixed_type](IndexedByteData const& l, IndexedByteData const& r) {
-            if (type->GetTypeId() == +(model::TypeId::kMixed)) {
+            if (type->GetTypeId() == (model::TypeId::kMixed)) {
                 return mixed_type->CompareAsStrings(l.data, r.data) == model::CompareResult::kEqual;
             }
             return type->Compare(l.data, r.data) == model::CompareResult::kEqual;
@@ -123,11 +122,11 @@ ValidityType Order::CheckCandidateValidity(AttributeList const& lhs, AttributeLi
             break;
         }
     }
-    ValidityType candidate_validity = +ValidityType::merge;
+    ValidityType candidate_validity = ValidityType::kMerge;
     if (!is_merge_immediately) {
         CreateSortedPartitionsFromSingletons(lhs);
         if (sorted_partitions_[lhs].Size() == 1) {
-            candidate_validity = +ValidityType::valid;
+            candidate_validity = ValidityType::kValid;
             candidate_sets_[lhs].erase(rhs);
         } else {
             CreateSortedPartitionsFromSingletons(rhs);
@@ -152,7 +151,7 @@ void Order::ComputeDependencies(ListLattice::LatticeLevel const& lattice_level) 
                 continue;
             }
             ValidityType candidate_validity = CheckCandidateValidity(lhs, rhs);
-            if (candidate_validity == +ValidityType::valid) {
+            if (candidate_validity == ValidityType::kValid) {
                 bool non_minimal_by_merge = false;
                 for (AttributeList const& merge_lhs : GetPrefixes(lhs)) {
                     if (InUnorderedMap(merge_invalidated_, merge_lhs, rhs)) {
@@ -171,9 +170,9 @@ void Order::ComputeDependencies(ListLattice::LatticeLevel const& lattice_level) 
                 if (lhs_unique) {
                     candidate_sets_[lhs].erase(rhs);
                 }
-            } else if (candidate_validity == +ValidityType::swap) {
+            } else if (candidate_validity == ValidityType::kSwap) {
                 candidate_sets_[lhs].erase(rhs);
-            } else if (candidate_validity == +ValidityType::merge) {
+            } else if (candidate_validity == ValidityType::kMerge) {
                 if (merge_invalidated_.find(lhs) == merge_invalidated_.end()) {
                     merge_invalidated_[lhs] = {};
                 }
@@ -298,67 +297,66 @@ void Order::MergePrune() {
 }
 
 void Order::PrintValidOD() {
-    LOG(DEBUG) << "***PREVIOUS CANDIDATE SETS***" << '\n';
+    LOG_DEBUG("***PREVIOUS CANDIDATE SETS***\n");
     for (auto const& [lhs, rhs_list] : previous_candidate_sets_) {
         if (rhs_list.empty()) {
             for (auto const& attr : lhs) {
-                LOG(DEBUG) << attr + 1 << ",";
+                LOG_DEBUG("{},", attr + 1);
             }
-            LOG(DEBUG) << "-> empty";
-            LOG(DEBUG) << '\n';
+            LOG_DEBUG("-> empty");
+            LOG_DEBUG('\n');
         }
         for (AttributeList const& rhs : rhs_list) {
             for (auto const& attr : lhs) {
-                LOG(DEBUG) << attr + 1 << ",";
+                LOG_DEBUG("{},", attr + 1);
             }
-            LOG(DEBUG) << "->";
+            LOG_DEBUG("->");
             for (auto const& attr : rhs) {
-                LOG(DEBUG) << attr + 1 << ",";
+                LOG_DEBUG("{},", attr + 1);
             }
-            LOG(DEBUG) << '\n';
+            LOG_DEBUG('\n');
         }
     }
-    LOG(DEBUG) << "***CANDIDATE SETS***" << '\n';
+    LOG_DEBUG("***CANDIDATE SETS***\n");
     for (auto const& [lhs, rhs_list] : candidate_sets_) {
         if (rhs_list.empty()) {
             for (auto const& attr : lhs) {
-                LOG(DEBUG) << attr + 1 << ",";
+                LOG_DEBUG("{},", attr + 1);
             }
-            LOG(DEBUG) << "-> empty";
-            LOG(DEBUG) << '\n';
+            LOG_DEBUG("-> empty");
+            LOG_DEBUG('\n');
         }
         for (AttributeList const& rhs : rhs_list) {
             for (auto const& attr : lhs) {
-                LOG(DEBUG) << attr + 1 << ",";
+                LOG_DEBUG("{},", attr + 1);
             }
-            LOG(DEBUG) << "->";
+            LOG_DEBUG("->");
             for (auto const& attr : rhs) {
-                LOG(DEBUG) << attr + 1 << ",";
+                LOG_DEBUG("{},", attr + 1);
             }
-            LOG(DEBUG) << '\n';
+            LOG_DEBUG('\n');
         }
     }
-    LOG(DEBUG) << "***VALID ORDER DEPENDENCIES***" << '\n';
+    LOG_DEBUG("***VALID ORDER DEPENDENCIES***\n");
     unsigned int cnt = 0;
     for (auto const& [lhs, rhs_list] : valid_) {
         for (AttributeList const& rhs : rhs_list) {
             ++cnt;
             for (auto const& attr : lhs) {
-                LOG(DEBUG) << attr + 1 << ",";
+                LOG_DEBUG("{},", attr + 1);
             }
-            LOG(DEBUG) << "->";
+            LOG_DEBUG("->");
             for (auto const& attr : rhs) {
-                LOG(DEBUG) << attr + 1 << ",";
+                LOG_DEBUG("{},", attr + 1);
             }
-            LOG(DEBUG) << '\n';
+            LOG_DEBUG('\n');
         }
     }
-    LOG(DEBUG) << "OD amount: " << cnt;
-    LOG(DEBUG) << '\n' << '\n';
+    LOG_DEBUG("OD amount: {}", cnt);
+    LOG_DEBUG("\n\n");
 }
 
-unsigned long long Order::ExecuteInternal() {
-    auto start_time = std::chrono::system_clock::now();
+void Order::ExecuteInternal() {
     CreateSingleColumnSortedPartitions();
     lattice_ = std::make_unique<ListLattice>(candidate_sets_, single_attributes_);
     while (!lattice_->IsEmpty()) {
@@ -367,10 +365,6 @@ unsigned long long Order::ExecuteInternal() {
         lattice_->GenerateNextLevel(candidate_sets_);
     }
     PrintValidOD();
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    LOG(DEBUG) << "ms: " << elapsed_milliseconds.count() << '\n';
-    return elapsed_milliseconds.count();
 }
 
 }  // namespace algos::order

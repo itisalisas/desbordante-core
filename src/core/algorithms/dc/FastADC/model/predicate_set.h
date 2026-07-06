@@ -9,14 +9,14 @@
 #include <boost/dynamic_bitset/dynamic_bitset.hpp>
 #include <boost/move/utility_core.hpp>
 
-#include "dc/FastADC/model/predicate.h"
-#include "dc/FastADC/providers/index_provider.h"
+#include "core/algorithms/dc/FastADC/model/predicate.h"
+#include "core/algorithms/dc/FastADC/providers/index_provider.h"
 
 namespace algos::fastadc {
 
 class PredicateSet {
 private:
-    boost::dynamic_bitset<> bitset_{kPredicateBits};
+    boost::dynamic_bitset<> bitset_{kMaxPredicateBits};
     mutable std::unique_ptr<PredicateSet> inv_set_TS_;  // Cached inverse set
 
 public:
@@ -119,7 +119,14 @@ public:
     // NOLINTEND(readability-identifier-naming)
 
     size_t Hash() const {
-        return std::hash<boost::dynamic_bitset<>>()(bitset_);
+        std::size_t seed = 0;
+        boost::hash_combine(seed, bitset_.size());
+
+        for (auto i = bitset_.find_first(); i != boost::dynamic_bitset<>::npos;
+             i = bitset_.find_next(i)) {
+            boost::hash_combine(seed, i);
+        }
+        return seed;
     }
 
     bool operator==(PredicateSet const& other) const {
