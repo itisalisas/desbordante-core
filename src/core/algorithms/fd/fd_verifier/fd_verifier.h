@@ -5,11 +5,11 @@
 #include <string>
 #include <vector>
 
-#include "algorithms/algorithm.h"
-#include "algorithms/fd/fd_verifier/stats_calculator.h"
-#include "config/equal_nulls/type.h"
-#include "config/indices/type.h"
-#include "config/tabular_data/input_table_type.h"
+#include "core/algorithms/algorithm.h"
+#include "core/algorithms/fd/fd_verifier/stats_calculator.h"
+#include "core/config/equal_nulls/type.h"
+#include "core/config/indices/type.h"
+#include "core/config/tabular_data/input_table_type.h"
 
 namespace algos::fd_verifier {
 
@@ -28,7 +28,6 @@ private:
     std::unique_ptr<StatsCalculator> stats_calculator_;
 
     void VerifyFD() const;
-    std::shared_ptr<model::PLI const> CalculatePLI(config::IndicesType const& indices) const;
     void RegisterOptions();
 
     void ResetState() final {
@@ -40,7 +39,7 @@ private:
 protected:
     void LoadDataInternal() override;
     void MakeExecuteOptsAvailable() override;
-    unsigned long long ExecuteInternal() override;
+    void ExecuteInternal() override;
 
 public:
     /* Returns true if FD holds */

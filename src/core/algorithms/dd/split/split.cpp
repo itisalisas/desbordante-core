@@ -1,8 +1,7 @@
-#include "algorithms/dd/split/split.h"
+#include "core/algorithms/dd/split/split.h"
 
 #include <algorithm>
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <limits>
 #include <list>
@@ -16,19 +15,19 @@
 
 #include <boost/dynamic_bitset.hpp>
 #include <boost/regex.hpp>
-#include <easylogging++.h>
 
-#include "algorithms/dd/split/model/distance_position_list_index.h"
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/tabular_data/input_table/option.h"
-#include "model/table/column_index.h"
-#include "model/types/numeric_type.h"
-#include "util/levenshtein_distance.h"
+#include "core/algorithms/dd/split/model/distance_position_list_index.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/model/table/column_index.h"
+#include "core/model/types/numeric_type.h"
+#include "core/util/levenshtein_distance.h"
+#include "core/util/logger.h"
 
 namespace algos::dd {
 
-Split::Split() : Algorithm({}) {
+Split::Split() : Algorithm() {
     RegisterOptions();
     MakeOptionsAvailable({config::kTableOpt.GetName()});
 }
@@ -41,7 +40,7 @@ void Split::RegisterOptions() {
     RegisterOption(config::kTableOpt(&input_table_));
     RegisterOption(Option{&difference_table_, kDifferenceTable, kDDifferenceTable, default_table});
     RegisterOption(Option{&num_rows_, kNumRows, kDNumRows, 0U});
-    RegisterOption(Option{&num_columns_, kNumColumns, kDNUmColumns, 0U});
+    RegisterOption(Option{&num_columns_, kNumColumns, kDNumColumns, 0U});
 }
 
 void Split::MakeExecuteOptsAvailable() {
@@ -83,11 +82,11 @@ void Split::CheckTypes() {
         model::TypedColumnData const& column = typed_relation_->GetColumnData(column_index);
         model::TypeId type_id = column.GetTypeId();
 
-        if (type_id == +model::TypeId::kUndefined) {
+        if (type_id == model::TypeId::kUndefined) {
             throw std::invalid_argument("Column with index \"" + std::to_string(column_index) +
                                         "\" type undefined.");
         }
-        if (type_id == +model::TypeId::kMixed) {
+        if (type_id == model::TypeId::kMixed) {
             throw std::invalid_argument("Column with index \"" + std::to_string(column_index) +
                                         "\" contains values of different types.");
         }
@@ -118,9 +117,8 @@ void Split::ParseDifferenceTable() {
     }
 }
 
-unsigned long long Split::ExecuteInternal() {
-    auto const start_time = std::chrono::system_clock::now();
-    LOG(DEBUG) << "Start";
+void Split::ExecuteInternal() {
+    LOG_DEBUG("Start");
 
     SetLimits();
     CheckTypes();
@@ -129,55 +127,44 @@ unsigned long long Split::ExecuteInternal() {
     CalculateAllDistances();
     CalculateIndexSearchSpaces();
 
-    LOG(INFO) << "Calculated distances";
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    LOG(DEBUG) << "Current time: " << elapsed_milliseconds.count();
+    LOG_INFO("Calculated distances");
 
-    if (reduce_method_ == +Reduce::IEHybrid) {
+    if (reduce_method_ == Reduce::kIeHybrid) {
         CalculateTuplePairs();
     }
 
-    LOG(INFO) << "Calculated tuple pairs";
-    elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    LOG(DEBUG) << "Current time: " << elapsed_milliseconds.count();
-    LOG(INFO) << "Minimum and maximum distances for each column with non-empty search space:";
+    LOG_INFO("Calculated tuple pairs");
+    LOG_INFO("Minimum and maximum distances for each column with non-empty search space:");
 
     for (model::ColumnIndex index = 0; index < num_columns_; index++)
-        LOG(INFO) << input_table_->GetColumnName(non_empty_cols_[index]) << ": "
-                  << min_max_dif_[index].lower_bound << ", " << min_max_dif_[index].upper_bound;
+        LOG_INFO("{}: {}, {}", input_table_->GetColumnName(non_empty_cols_[index]),
+                 min_max_dif_[index].lower_bound, min_max_dif_[index].upper_bound);
 
-    unsigned const search_size = ReduceDDs(start_time);
+    unsigned const search_size = ReduceDDs();
 
-    LOG(DEBUG) << "Reduced dependencies";
+    LOG_DEBUG("Reduced dependencies");
 
     unsigned num_cycles = RemoveRedundantDDs();
 
-    LOG(INFO) << "Removed redundant dependencies";
-    LOG(DEBUG) << "Cycles: " << num_cycles;
+    LOG_INFO("Removed redundant dependencies");
+    LOG_DEBUG("Cycles: {}", num_cycles);
 
     num_cycles = RemoveTransitiveDDs();
 
-    LOG(INFO) << "Removed transitive dependencies";
-    LOG(DEBUG) << "Cycles: " << num_cycles;
-    LOG(INFO) << "Search space size: " << search_size;
+    LOG_INFO("Removed transitive dependencies");
+    LOG_DEBUG("Cycles: {}", num_cycles);
+    LOG_INFO("Search space size: {}", search_size);
 
     PrintResults();
-
-    elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    LOG(INFO) << "Algorithm time: " << elapsed_milliseconds.count();
-    return elapsed_milliseconds.count();
 }
 
-unsigned Split::ReduceDDs(auto const& start_time) {
+unsigned Split::ReduceDDs() {
     unsigned search_size = 0;
     std::vector<DF> search, dfs_y;
     std::list<DD> reduced;
 
     std::vector<std::size_t> tuple_pair_indices;
-    if (reduce_method_ == +Reduce::IEHybrid) {
+    if (reduce_method_ == Reduce::kIeHybrid) {
         tuple_pair_indices.resize(tuple_pair_num_);
         std::iota(tuple_pair_indices.begin(), tuple_pair_indices.end(), 0);
     }
@@ -191,25 +178,22 @@ unsigned Split::ReduceDDs(auto const& start_time) {
         search = SearchSpace(indices);
         dfs_y = SearchSpace(index);
         search_size += search.size() * (dfs_y.size() - 1);
-        LOG(DEBUG) << "Calculated search spaces for column "
-                   << input_table_->GetColumnName(non_empty_cols_[index]);
-        auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now() - start_time);
-        LOG(DEBUG) << "Current time: " << elapsed_milliseconds.count();
-        LOG(DEBUG) << "Lhs and rhs search space sizes: " << search.size() << " " << dfs_y.size();
-        LOG(DEBUG) << "Number of verifications for each df in rhs:";
+        LOG_DEBUG("Calculated search spaces for column {}",
+                  input_table_->GetColumnName(non_empty_cols_[index]));
+        LOG_DEBUG("Lhs and rhs search space sizes: {} {}", search.size(), dfs_y.size());
+        LOG_DEBUG("Number of verifications for each df in rhs:");
 
         for (auto& df_y : dfs_y) {
             unsigned cnt = 0;
             if (df_y != dfs_y.front()) {
                 switch (reduce_method_) {
-                    case +Reduce::Negative:
+                    case Reduce::kNegative:
                         reduced = NegativePruningReduce(df_y, search, cnt);
                         break;
-                    case +Reduce::Hybrid:
+                    case Reduce::kHybrid:
                         reduced = HybridPruningReduce(df_y, search, cnt);
                         break;
-                    case +Reduce::IEHybrid:
+                    case Reduce::kIeHybrid:
                         reduced = InstanceExclusionReduce(tuple_pair_indices, search, df_y, cnt);
                         break;
                     default:
@@ -217,13 +201,10 @@ unsigned Split::ReduceDDs(auto const& start_time) {
                 }
                 dd_collection_.splice(dd_collection_.end(), reduced);
             }
-            LOG(DEBUG) << cnt;
+            LOG_DEBUG("{}", cnt);
         }
-        elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now() - start_time);
-        LOG(INFO) << "Reduced dependencies with their rhs on column "
-                  << input_table_->GetColumnName(non_empty_cols_[index]);
-        LOG(DEBUG) << "Current time: " << elapsed_milliseconds.count();
+        LOG_INFO("Reduced dependencies with their rhs on column {}",
+                 input_table_->GetColumnName(non_empty_cols_[index]));
     }
     return search_size;
 }
@@ -362,7 +343,7 @@ inline bool Split::CheckDFConstraint(DFConstraint const& dif_constraint,
     ClusterIndex const max_cluster = std::max(first_cluster, second_cluster);
     double const dif = distances_[column_index][min_cluster][max_cluster - min_cluster];
 
-    if (type_ids_[column_index] == +model::TypeId::kDouble) {
+    if (type_ids_[column_index] == model::TypeId::kDouble) {
         return dif_constraint.Contains(dif);
     }
 
@@ -428,7 +409,7 @@ std::vector<DFConstraint> Split::IndexSearchSpace(model::ColumnIndex index) {
         // differential functions should be put in this exact order for further reducing
         for (int i = num_dfs_per_column_ - 1; i >= 0; i--) {
             if (min_max_dif_[index].IsWithinExclusive(i)) {
-                dfs.push_back({min_max_dif_[index].lower_bound, static_cast<double>(i)});
+                dfs.emplace_back(min_max_dif_[index].lower_bound, i);
             }
         }
         return dfs;
@@ -454,7 +435,7 @@ std::vector<DFConstraint> Split::IndexSearchSpace(model::ColumnIndex index) {
 
     for (std::size_t row_index = 0; row_index < dif_num_rows; row_index++) {
         model::TypeId type_id = dif_column.GetValueTypeId(row_index);
-        if (type_id == +model::TypeId::kString) {
+        if (type_id == model::TypeId::kString) {
             std::string df_str = dif_column.GetDataAsString(row_index);
             boost::smatch matches;
             if (boost::regex_match(df_str, matches, df_regex)) {
@@ -616,7 +597,7 @@ std::list<DD> Split::NegativePruningReduce(DF const& rhs, std::vector<DF> const&
     auto const [prune, remainder] = NegativeSplit(search, last_df);
 
     std::list<DD> dds = NegativePruningReduce(rhs, prune, cnt);
-    if (dds.empty() && IsFeasible(last_df)) dds.push_back({last_df, rhs});
+    if (dds.empty() && IsFeasible(last_df)) dds.emplace_back(last_df, rhs);
     std::list<DD> const remaining_dds = NegativePruningReduce(rhs, remainder, cnt);
 
     std::list<DD> merged_dds = MergeReducedResults(dds, remaining_dds);
@@ -635,7 +616,7 @@ std::list<DD> Split::HybridPruningReduce(DF const& rhs, std::vector<DF> const& s
 
     cnt++;
     if (VerifyDD(first_df, rhs)) {
-        if (IsFeasible(first_df)) dds.push_back({first_df, rhs});
+        if (IsFeasible(first_df)) dds.emplace_back(first_df, rhs);
         std::vector<DF> remainder = DoPositivePruning(search, first_df);
         std::list<DD> remaining_dds = HybridPruningReduce(rhs, remainder, cnt);
         dds.splice(dds.end(), remaining_dds);
@@ -685,7 +666,7 @@ std::list<DD> Split::InstanceExclusionReduce(std::vector<std::size_t> const& tup
     }
 
     if (no_pairs_left) {
-        if (IsFeasible(first_df)) dds.push_back({first_df, rhs});
+        if (IsFeasible(first_df)) dds.emplace_back(first_df, rhs);
         std::vector<DF> remainder = DoPositivePruning(search, first_df);
         std::list<DD> remaining_dds =
                 InstanceExclusionReduce(tuple_pair_indices, remainder, rhs, cnt);
@@ -714,9 +695,9 @@ std::list<DD> Split::InstanceExclusionReduce(std::vector<std::size_t> const& tup
 
 void Split::PrintResults() {
     std::list<model::DDString> const result_strings = GetDDStringList();
-    LOG(INFO) << "Minimal cover size: " << result_strings.size();
+    LOG_INFO("Minimal cover size: {}", result_strings.size());
     for (auto const& result_str : result_strings) {
-        LOG(DEBUG) << result_str.ToString();
+        LOG_DEBUG("{}", result_str.ToString());
     }
 }
 
@@ -749,7 +730,7 @@ model::DDString Split::DDToDDString(DD const& dd) const {
 std::list<model::DDString> Split::GetDDStringList() const {
     std::list<model::DDString> dd_strings;
     for (auto const& result_dd : dd_collection_) {
-        dd_strings.push_back(DDToDDString(result_dd));
+        dd_strings.emplace_back(DDToDDString(result_dd));
     }
     return dd_strings;
 }

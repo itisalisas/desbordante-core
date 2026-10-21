@@ -1,0 +1,269 @@
+#include "afd_metric_calculator.h"
+
+#include <cmath>
+#include <iterator>
+#include <stdexcept>
+#include <unordered_map>
+
+#include "core/config/descriptions.h"
+#include "core/config/equal_nulls/option.h"
+#include "core/config/error/type.h"
+#include "core/config/indices/option.h"
+#include "core/config/names.h"
+#include "core/config/option_using.h"
+#include "core/config/tabular_data/input_table/option.h"
+
+namespace algos::afd_metric_calculator {
+
+using Cluster = model::PositionListIndex::Cluster;
+
+AFDMetricCalculator::AFDMetricCalculator() : Algorithm() {
+    RegisterOptions();
+    MakeOptionsAvailable({config::kTableOpt.GetName()});
+}
+
+void AFDMetricCalculator::RegisterOptions() {
+    DESBORDANTE_OPTION_USING;
+
+    auto get_schema_cols = [this]() { return relation_->GetSchema()->GetNumColumns(); };
+
+    RegisterOption(config::kTableOpt(&input_table_));
+    RegisterOption(config::kLhsIndicesOpt(&lhs_indices_, get_schema_cols));
+    RegisterOption(config::kRhsIndicesOpt(&rhs_indices_, get_schema_cols));
+    RegisterOption(Option{&metric_, kMetric, kDAFDMetric});
+}
+
+void AFDMetricCalculator::MakeExecuteOptsAvailable() {
+    using namespace config::names;
+
+    MakeOptionsAvailable(
+            {kMetric, config::kLhsIndicesOpt.GetName(), config::kRhsIndicesOpt.GetName()});
+}
+
+void AFDMetricCalculator::LoadDataInternal() {
+    relation_ = ColumnLayoutRelationData::CreateFrom(*input_table_);
+
+    if (relation_->GetColumnData().empty() || relation_->GetNumRows() == 0) {
+        throw std::runtime_error("Got an empty dataset: AFD metric calculation is meaningless.");
+    }
+}
+
+void AFDMetricCalculator::ExecuteInternal() {
+    auto num_rows = relation_->GetNumRows();
+    auto lhs_pli = relation_->CalculatePLI(lhs_indices_);
+    auto rhs_pli = relation_->CalculatePLI(rhs_indices_);
+
+    switch (metric_) {
+        case AFDMetric::kG2:
+            result_ = 1 - CalculateG2Error(lhs_pli.get(), rhs_pli.get(), num_rows);
+            break;
+        case AFDMetric::kTau:
+            result_ = CalculateTau(lhs_pli.get(), rhs_pli.get());
+            break;
+        case AFDMetric::kMuPlus:
+            result_ = CalculateMuPlus(lhs_pli.get(), rhs_pli.get());
+            break;
+        case AFDMetric::kFi:
+            result_ = CalculateFI(lhs_pli.get(), rhs_pli.get(), num_rows);
+            break;
+        case AFDMetric::kG1:
+            result_ = 1 - CalculateG1Error(lhs_pli.get(), lhs_pli->Intersect(rhs_pli.get()).get(),
+                                           relation_->GetNumTuplePairs());
+            break;
+        case AFDMetric::kG3:
+            result_ = CalculateG3(lhs_pli.get(), rhs_pli.get(), num_rows);
+            break;
+        case AFDMetric::kPdep:
+            result_ = CalculatePdepMeasure(lhs_pli.get(), rhs_pli.get());
+            break;
+        case AFDMetric::kRho:
+            result_ = CalculateRhoMeasure(lhs_pli.get(), lhs_pli->Intersect(rhs_pli.get()).get());
+            break;
+    }
+}
+
+long double AFDMetricCalculator::CalculateG2Error(model::PLI const* lhs_pli,
+                                                  model::PLI const* rhs_pli, size_t num_rows) {
+    if (num_rows <= 0) throw std::invalid_argument("received non-positive number of rows");
+
+    auto num_error_rows = 0.L;
+
+    auto const& lhs_clusters = lhs_pli->GetIndex();
+    auto pt_shared = rhs_pli->CalculateAndGetProbingTable();
+    auto const& pt = *pt_shared.get();
+    for (auto const& cluster : lhs_clusters) {
+        auto frequencies = model::PLI::CreateFrequencies(cluster, pt);
+        auto size = cluster.size();
+        if (frequencies.size() != 1 || frequencies.begin()->second != size) num_error_rows += size;
+    }
+
+    return num_error_rows / num_rows;
+}
+
+long double AFDMetricCalculator::CalculateG3(model::PLI const* lhs_pli, model::PLI const* rhs_pli,
+                                             std::size_t num_rows) {
+    if (num_rows <= 0) throw std::invalid_argument("received non-positive number of rows");
+
+    std::size_t const lhs_singleton_rows = lhs_pli->GetRelationSize() - lhs_pli->GetSize();
+    std::size_t max_fd_holds_rows = lhs_singleton_rows;
+
+    std::deque<model::PLI::Cluster> const& lhs_clusters = lhs_pli->GetIndex();
+    std::shared_ptr<std::vector<int> const> probing_table_ptr =
+            rhs_pli->CalculateAndGetProbingTable();
+    std::vector<int> const& probing_table = *probing_table_ptr;
+    for (model::PLI::Cluster const& cluster : lhs_clusters) {
+        auto frequencies = model::PLI::CreateFrequencies(cluster, probing_table);
+        std::size_t max_fd_holds_in_cluster = 1;
+        for (auto const& [rhs_value, rhs_cluster_size] : frequencies) {
+            if (rhs_cluster_size > max_fd_holds_in_cluster)
+                max_fd_holds_in_cluster = rhs_cluster_size;
+        }
+        max_fd_holds_rows += max_fd_holds_in_cluster;
+    }
+
+    return max_fd_holds_rows / static_cast<long double>(num_rows);
+}
+
+config::ErrorType AFDMetricCalculator::CalculateRhoMeasure(model::PLI const* x_pli,
+                                                           model::PLI const* xa_pli) {
+    auto calculate_dom = [](model::PLI const* pli) {
+        auto index = pli->GetIndex();
+        size_t dom = index.size();
+
+        std::size_t cluster_rows_count = 0;
+        for (Cluster const& cluster : index) {
+            cluster_rows_count += cluster.size();
+        }
+
+        std::size_t unique_rows = pli->GetRelationSize() - cluster_rows_count;
+        dom += unique_rows;
+        return static_cast<config::ErrorType>(dom);
+    };
+
+    config::ErrorType dom_x = calculate_dom(x_pli);
+    config::ErrorType dom_xa = calculate_dom(xa_pli);
+    return dom_x / dom_xa;
+}
+
+long double AFDMetricCalculator::CalculatePdepSelf(model::PLI const* x_pli) {
+    size_t n = x_pli->GetRelationSize();
+    config::ErrorType sum = 0;
+    std::size_t cluster_rows_count = 0;
+    std::deque<Cluster> const& x_index = x_pli->GetIndex();
+    for (Cluster const& x_cluster : x_index) {
+        cluster_rows_count += x_cluster.size();
+        sum += x_cluster.size() * x_cluster.size();
+    }
+    std::size_t unique_rows = x_pli->GetRelationSize() - cluster_rows_count;
+    sum += unique_rows;
+    return static_cast<config::ErrorType>(sum / (n * n));
+}
+
+long double AFDMetricCalculator::CalculatePdepMeasure(model::PLI const* x_pli,
+                                                      model::PLI const* a_pli) {
+    size_t n = x_pli->GetRelationSize();
+    config::ErrorType sum = n - x_pli->GetSize();
+    std::shared_ptr<std::vector<int> const> const a_prob = a_pli->CalculateAndGetProbingTable();
+
+    for (Cluster const& x_cluster : x_pli->GetIndex()) {
+        config::ErrorType x_cluster_size = x_cluster.size();
+        std::unordered_map<int, unsigned> frequencies;
+        size_t singleton_records = 0;
+
+        for (int tuple_index : x_cluster) {
+            int const value_id = (*a_prob)[tuple_index];
+            if (value_id == model::PLI::kSingletonValueId) {
+                ++singleton_records;
+            } else {
+                ++frequencies[value_id];
+            }
+        }
+
+        for (auto const& [_, count] : frequencies) {
+            sum += static_cast<config::ErrorType>(count) * count / x_cluster_size;
+        }
+
+        // Singleton A values represent distinct joint clusters of size one.
+        sum += singleton_records / x_cluster_size;
+    }
+
+    return sum / n;
+}
+
+long double AFDMetricCalculator::CalculateTau(model::PLI const* lhs_pli,
+                                              model::PLI const* rhs_pli) {
+    auto p1 = CalculatePdepSelf(rhs_pli);
+    if (p1 == 1) return 1;
+
+    auto p2 = CalculatePdepMeasure(lhs_pli, rhs_pli);
+
+    return (p2 - p1) / (1 - p1);
+}
+
+long double AFDMetricCalculator::CalculateMuPlus(model::PLI const* x_pli, model::PLI const* a_pli) {
+    config::ErrorType pdep_y = CalculatePdepSelf(a_pli);
+    if (pdep_y == 1) return 1;
+
+    config::ErrorType pdep_xy = CalculatePdepMeasure(x_pli, a_pli);
+
+    size_t n = x_pli->GetRelationSize();
+    size_t k = x_pli->GetNumCluster();
+
+    if (k == n) return 1;
+
+    config::ErrorType mu = 1 - (1 - pdep_xy) / (1 - pdep_y) * (n - 1) / (n - k);
+    return std::max(0., mu);
+}
+
+long double AFDMetricCalculator::CalculateFI(model::PLI const* lhs_pli, model::PLI const* rhs_pli,
+                                             size_t num_rows) {
+    if (num_rows <= 0) throw std::invalid_argument("received non-positive number of rows");
+
+    if (rhs_pli->GetNumCluster() < 2) {
+        return 0.L;
+    }
+
+    auto entropy = rhs_pli->GetEntropy();
+
+    auto conditional_entropy = 0.L;
+    for (Cluster const& x : lhs_pli->GetIndex()) {
+        auto log_x = std::log(x.size());
+
+        size_t non_singleton_records = 0;
+        for (Cluster const& y : rhs_pli->GetIndex()) {
+            model::PositionListIndex::Cluster xy;
+            std::set_intersection(x.begin(), x.end(), y.begin(), y.end(), std::back_inserter(xy));
+
+            auto size = (long double)xy.size();
+            if (size == 0.L) continue;
+            non_singleton_records += size;
+            conditional_entropy -= size * (std::log(size) - log_x);
+        }
+
+        conditional_entropy -= (long double)(x.size() - non_singleton_records) * (-log_x);
+    }
+    conditional_entropy /= num_rows;
+    auto mutual_information = entropy - conditional_entropy;
+    return mutual_information / entropy;
+}
+
+config::ErrorType AFDMetricCalculator::CalculateZeroAryG1(ColumnData const* rhs,
+                                                          unsigned long long num_tuple_pairs) {
+    // "g1 zero-ary" variant for empty-LHS FDs (->A). TANE needs this to evaluate
+    // constant-column candidates before building the lattice. It does not require
+    // intersecting with an LHS PLI, unlike CalculateG1Error below.
+    return 1 - rhs->GetPositionListIndex()->GetNepAsLong() /
+                       static_cast<config::ErrorType>(num_tuple_pairs);
+}
+
+config::ErrorType AFDMetricCalculator::CalculateG1Error(model::PLI const* lhs_pli,
+                                                        model::PLI const* joint_pli,
+                                                        unsigned long long num_tuple_pairs) {
+    // Non-standard g1: divides by num_tuple_pairs instead of (n choose 2). Kept
+    // intentionally — Tane originally used this variant and all hash-based
+    // regression tests were written against it. Fixing it changes those hashes.
+    return static_cast<config::ErrorType>((lhs_pli->GetNepAsLong() - joint_pli->GetNepAsLong()) /
+                                          static_cast<config::ErrorType>(num_tuple_pairs));
+}
+
+}  // namespace algos::afd_metric_calculator

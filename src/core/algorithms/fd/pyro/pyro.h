@@ -3,9 +3,9 @@
 #include <list>
 #include <mutex>
 
-#include "algorithms/fd/pli_based_fd_algorithm.h"
-#include "algorithms/fd/pyrocommon/core/dependency_consumer.h"
-#include "algorithms/fd/pyrocommon/core/search_space.h"
+#include "core/algorithms/fd/pli_based_fd_algorithm.h"
+#include "core/algorithms/fd/pyrocommon/core/dependency_consumer.h"
+#include "core/algorithms/fd/pyrocommon/core/search_space.h"
 
 namespace algos {
 
@@ -13,6 +13,7 @@ namespace algos {
 class Pyro : public DependencyConsumer, public PliBasedFDAlgorithm {
 private:
     std::list<std::unique_ptr<SearchSpace>> search_spaces_;
+    std::mutex search_spaces_mutex_;
 
     CachingMethod caching_method_ = CachingMethod::kCoin;
     CacheEvictionMethod eviction_method_ = CacheEvictionMethod::kDefault;
@@ -24,10 +25,10 @@ private:
     void MakeExecuteOptsAvailableFDInternal() final;
 
     void ResetStateFd() final;
-    unsigned long long ExecuteInternal() final;
+    void ExecuteInternal() final;
 
 public:
-    Pyro(std::optional<ColumnLayoutRelationDataManager> relation_manager = std::nullopt);
+    Pyro();
 };
 
 }  // namespace algos

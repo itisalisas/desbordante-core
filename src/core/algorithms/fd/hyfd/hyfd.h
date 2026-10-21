@@ -5,11 +5,12 @@
 #include <utility>
 #include <vector>
 
-#include "algorithms/fd/hycommon/types.h"
-#include "algorithms/fd/pli_based_fd_algorithm.h"
-#include "algorithms/fd/raw_fd.h"
-#include "config/thread_number/type.h"
-#include "model/table/position_list_index.h"
+#include "core/algorithms/fd/fd_algorithm.h"
+#include "core/algorithms/fd/hycommon/types.h"
+#include "core/algorithms/fd/raw_fd.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/config/thread_number/type.h"
+#include "core/model/table/position_list_index.h"
 
 namespace algos::hyfd {
 
@@ -36,20 +37,27 @@ namespace algos::hyfd {
  * '16). Association for Computing Machinery, New York, NY, USA, 821–833.
  * https://doi.org/10.1145/2882903.2915203
  */
-class HyFD : public PliBasedFDAlgorithm {
+class HyFD : public FDAlgorithm {
 private:
     void ResetStateFd() final {}
 
-    unsigned long long ExecuteInternal() override;
+    void LoadDataInternal() final;
+    void ExecuteInternal() override;
 
     void RegisterFDs(std::vector<RawFD>&& fds, std::vector<algos::hy::ClusterId> const& og_mapping);
 
     void MakeExecuteOptsAvailableFDInternal() override;
 
+    config::InputTable input_table_;
+    std::shared_ptr<RelationalSchema const> schema_;
+    hy::PLIsPtr plis_;
+    hy::RowsPtr pli_records_;
+    std::vector<hy::ClusterId> og_mapping_;
+
     config::ThreadNumType threads_num_ = 1;
 
 public:
-    HyFD(std::optional<ColumnLayoutRelationDataManager> relation_manager = std::nullopt);
+    HyFD();
 };
 
 }  // namespace algos::hyfd

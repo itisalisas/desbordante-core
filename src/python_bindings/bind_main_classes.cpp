@@ -1,20 +1,21 @@
-#include "bind_main_classes.h"
+#include "python_bindings/bind_main_classes.h"
+
+#include <pybind11/pybind11.h>
 
 #include <typeindex>
 #include <typeinfo>
 
-#include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "algorithms/algo_factory.h"
-#include "algorithms/algorithm.h"
-#include "config/exceptions.h"
-#include "config/names.h"
-#include "py_util/get_py_type.h"
-#include "py_util/opt_to_py.h"
-#include "py_util/py_to_any.h"
+#include "core/algorithms/algo_factory.h"
+#include "core/algorithms/algorithm.h"
+#include "core/config/exceptions.h"
+#include "core/config/names.h"
+#include "python_bindings/py_util/get_py_type.h"
+#include "python_bindings/py_util/opt_to_py.h"
+#include "python_bindings/py_util/py_to_any.h"
 
-namespace {
+namespace configure_algorithm {
 namespace py = pybind11;
 using algos::Algorithm;
 auto const kVoidIndex = std::type_index{typeid(void)};
@@ -30,7 +31,9 @@ void ConfigureAlgo(Algorithm& algorithm, py::kwargs const& kwargs) {
                                : boost::any{};
             });
 }
-}  // namespace
+}  // namespace configure_algorithm
+
+using namespace configure_algorithm;
 
 namespace python_bindings {
 void BindMainClasses(py::module_& main_module) {
@@ -42,38 +45,13 @@ void BindMainClasses(py::module_& main_module) {
     py::register_exception<config::ConfigurationError>(main_module, "ConfigurationError",
                                                        PyExc_ValueError);
 
-#define CERTAIN_SCRIPTS_ONLY                                                       \
-    "\nThis option is only expected to be used by Python scripts in which it is\n" \
-    "easier to set all options one by one. For normal use, you may set the\n"      \
-    "algorithms' options using keyword arguments of the load_data and execute\nmethods."
+#define INTERNAL_OPTIONS_METHOD                                                    \
+    "\nThis option is only expected to be used by internal development Python\n"   \
+    "scripts. For normal use, you can set the algorithms' options using keyword\n" \
+    "arguments of the load_data and execute methods."
     py::class_<Algorithm>(main_module, "Algorithm")
             .def(
-                    "load_data",
-                    [](Algorithm& algo, py::kwargs const& kwargs) {
-                        ConfigureAlgo(algo, kwargs);
-                        algo.LoadData();
-                    },
-                    "Load data for execution")
-            .def("get_possible_options", &Algorithm::GetPossibleOptions,
-                 "Get names of options the algorithm may request.")
-            .def("get_description", &Algorithm::GetDescription, "option_name"_a,
-                 "Get description of an option.")
-            .def("get_needed_options", &Algorithm::GetNeededOptions,
-                 "Get names of options the algorithm requires to be set at the "
-                 "moment." CERTAIN_SCRIPTS_ONLY)
-            .def(
-                    "get_option_type",
-                    [](Algorithm const& algo, std::string_view option_name) {
-                        auto type_index = algo.GetTypeIndex(option_name);
-                        if (type_index == kVoidIndex)
-                            throw config::ConfigurationError{std::string{"Option named \""} +
-                                                             option_name.data() +
-                                                             "\" doesn't exist!"};
-                        return GetPyType(type_index);
-                    },
-                    "option_name"_a, "Get info about the option's type.")
-            .def(
-                    "set_option",
+                    "_set_option",
                     [](Algorithm& algorithm, std::string_view option_name,
                        py::handle option_value) {
                         if (option_value.is_none()) {
@@ -87,14 +65,39 @@ void BindMainClasses(py::module_& main_module) {
                     },
                     "option_name"_a, "option_value"_a = py::none(),
                     "Set option value. Passing None means setting the default "
-                    "value." CERTAIN_SCRIPTS_ONLY)
+                    "value." INTERNAL_OPTIONS_METHOD)
+            .def("_get_needed_options", &Algorithm::GetNeededOptions,
+                 "Get names of options the algorithm requires to be set at the "
+                 "moment." INTERNAL_OPTIONS_METHOD)
+            .def(
+                    "_get_option_type",
+                    [](Algorithm const& algo, std::string_view option_name) {
+                        auto type_index = algo.GetTypeIndex(option_name);
+                        if (type_index == kVoidIndex)
+                            throw config::ConfigurationError{std::string{"Option named \""} +
+                                                             option_name.data() +
+                                                             "\" doesn't exist!"};
+                        return GetPyType(type_index);
+                    },
+                    "option_name"_a, "Get info about the option's type." INTERNAL_OPTIONS_METHOD)
+            .def(
+                    "load_data",
+                    [](Algorithm& algo, py::kwargs const& kwargs) {
+                        ConfigureAlgo(algo, kwargs);
+                        algo.LoadData();
+                    },
+                    "Load data for execution")
+            .def("get_possible_options", &Algorithm::GetPossibleOptions,
+                 "Get names of options the algorithm may request.")
+            .def("get_description", &Algorithm::GetDescription, "option_name"_a,
+                 "Get description of an option.")
             .def(
                     "get_opts",
                     [](Algorithm& algorithm) {
                         auto opt_value_info = algorithm.GetOptValues();
                         std::unordered_map<std::string_view, pybind11::object> res;
                         for (auto const& [name, value_info] : opt_value_info) {
-                            if (name == config::names::kTable) {
+                            if (name == config::names::kTable || name == config::names::kSequence) {
                                 continue;
                             }
                             res[name] = OptToPy(value_info.type, value_info.value);
@@ -106,9 +109,9 @@ void BindMainClasses(py::module_& main_module) {
                     "execute",
                     [](Algorithm& algo, py::kwargs const& kwargs) {
                         ConfigureAlgo(algo, kwargs);
-                        algo.Execute();
+                        return algo.Execute();
                     },
                     "Process data.");
-#undef CERTAIN_SCRIPTS_ONLY
+#undef INTERNAL_OPTIONS_METHOD
 }
 }  // namespace python_bindings

@@ -5,9 +5,9 @@
 #include <utility>
 #include <vector>
 
-#include "algorithms/algorithm.h"
-#include "cfd_stats_calculator.h"
-#include "config/tabular_data/input_table_type.h"
+#include "core/algorithms/algorithm.h"
+#include "core/algorithms/cfd/cfd_verifier/cfd_stats_calculator.h"
+#include "core/config/tabular_data/input_table_type.h"
 
 namespace algos::cfd_verifier {
 
@@ -16,8 +16,8 @@ using CFDAttributeValuePair = std::pair<std::string, std::string>;
 class CFDVerifier : public Algorithm {
 private:
     config::InputTable input_table_;
-    std::vector<CFDAttributeValuePair> string_rule_left_;
-    CFDAttributeValuePair string_rule_right_;
+
+    cfd::RawCFD raw_cfd_rule_;
     cfd::ItemsetCFD cfd_;
 
     int minsup_ = 0;
@@ -41,7 +41,7 @@ private:
 protected:
     void LoadDataInternal() override;
     void MakeExecuteOptsAvailable() override;
-    unsigned long long ExecuteInternal() override;
+    void ExecuteInternal() override;
 
 public:
     CFDVerifier();

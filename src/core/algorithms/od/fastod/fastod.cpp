@@ -1,17 +1,17 @@
-#include "fastod.h"
+#include "core/algorithms/od/fastod/fastod.h"
 
 #include <memory>
 
 #include <boost/unordered/unordered_map.hpp>
-#include <easylogging++.h>
 
-#include "config/tabular_data/input_table/option.h"
-#include "config/time_limit/option.h"
-#include "util/timed_invoke.h"
+#include "core/config/error/option.h"
+#include "core/config/tabular_data/input_table/option.h"
+#include "core/config/time_limit/option.h"
+#include "core/util/logger.h"
 
 namespace algos {
 
-Fastod::Fastod() : Algorithm({}) {
+Fastod::Fastod() : Algorithm() {
     PrepareOptions();
 }
 
@@ -35,6 +35,7 @@ void Fastod::PrepareOptions() {
 void Fastod::RegisterOptions() {
     RegisterOption(config::kTableOpt(&input_table_));
     RegisterOption(config::kTimeLimitSecondsOpt(&time_limit_seconds_));
+    RegisterOption(config::kErrorOpt(&error_));
 }
 
 void Fastod::MakeLoadOptionsAvailable() {
@@ -42,11 +43,11 @@ void Fastod::MakeLoadOptionsAvailable() {
 }
 
 void Fastod::MakeExecuteOptsAvailable() {
-    MakeOptionsAvailable({config::kTimeLimitSecondsOpt.GetName()});
+    MakeOptionsAvailable({config::kTimeLimitSecondsOpt.GetName(), config::kErrorOpt.GetName()});
 }
 
 void Fastod::LoadDataInternal() {
-    data_ = std::make_shared<DataFrame>(DataFrame::FromInputTable(input_table_));
+    data_ = DataFrame::FromInputTable(input_table_);
 }
 
 void Fastod::ResetState() {
@@ -65,33 +66,28 @@ void Fastod::ResetState() {
     partition_cache_.Clear();
 }
 
-unsigned long long Fastod::ExecuteInternal() {
-    size_t const elapsed_milliseconds = util::TimedInvoke(&Fastod::Discover, this);
+void Fastod::ExecuteInternal() {
+    Discover();
 
     for (auto const& od : result_asc_) {
-        LOG(DEBUG) << od.ToString();
+        LOG_DEBUG("{}", od.ToString());
     }
 
     for (auto const& od : result_desc_) {
-        LOG(DEBUG) << od.ToString();
+        LOG_DEBUG("{}", od.ToString());
     }
 
     for (auto const& od : result_simple_) {
-        LOG(DEBUG) << od.ToString();
+        LOG_DEBUG("{}", od.ToString());
     }
-
-    return elapsed_milliseconds;
 }
 
 void Fastod::PrintStatistics() const {
-    const size_t ocd_count = result_asc_.size() + result_desc_.size();
-    const size_t fd_count = result_simple_.size();
-    const size_t od_count = ocd_count + fd_count;
+    size_t const ocd_count = result_asc_.size() + result_desc_.size();
+    size_t const fd_count = result_simple_.size();
+    size_t const od_count = ocd_count + fd_count;
 
-    LOG(DEBUG) << "RESULT: Time=" << timer_.GetElapsedSeconds() << ", "
-               << "OD=" << od_count << ", "
-               << "FD=" << fd_count << ", "
-               << "OCD=" << ocd_count;
+    LOG_DEBUG("RESULT: OD={}, FD={}, OCD={}", od_count, fd_count, ocd_count);
 }
 
 bool Fastod::IsComplete() const {
@@ -113,13 +109,13 @@ std::vector<fastod::SimpleCanonicalOD> const& Fastod::GetSimpleDependencies() co
 void Fastod::Initialize() {
     timer_.Start();
 
-    schema_ = AttributeSet(data_->GetColumnCount(), (1 << data_->GetColumnCount()) - 1);
+    schema_ = AttributeSet(data_.GetColumnCount(), (1 << data_.GetColumnCount()) - 1);
 
-    AttributeSet empty_set(data_->GetColumnCount());
+    AttributeSet empty_set(data_.GetColumnCount());
     CCPut(std::move(empty_set), schema_);
 
-    for (model::ColumnIndex i = 0; i < data_->GetColumnCount(); ++i)
-        context_in_current_level_.emplace(data_->GetColumnCount(), 1 << i);
+    for (model::ColumnIndex i = 0; i < data_.GetColumnCount(); ++i)
+        context_in_current_level_.emplace(data_.GetColumnCount(), 1 << i);
 }
 
 void Fastod::ComputeODs() {
@@ -129,9 +125,9 @@ void Fastod::ComputeODs() {
 
     for (AttributeSet const& context : context_in_current_level_) {
         auto& del_attrs = deleted_attrs[context_ind++];
-        del_attrs.reserve(data_->GetColumnCount());
+        del_attrs.reserve(data_.GetColumnCount());
 
-        for (model::ColumnIndex column = 0; column < data_->GetColumnCount(); ++column) {
+        for (model::ColumnIndex column = 0; column < data_.GetColumnCount(); ++column) {
             del_attrs.push_back(fastod::DeleteAttribute(context, column));
         }
 
@@ -148,8 +144,8 @@ void Fastod::ComputeODs() {
 
         CCPut(context, context_cc);
 
-        AddCandidates<false>(context, del_attrs);
-        AddCandidates<true>(context, del_attrs);
+        AddCandidates<od::Ordering::kDescending>(context, del_attrs);
+        AddCandidates<od::Ordering::kAscending>(context, del_attrs);
     }
 
     size_t delete_index = 0;
@@ -169,11 +165,11 @@ void Fastod::ComputeODs() {
                 [this, &context, &del_attrs, &cc](model::ColumnIndex attr) {
                     SimpleCanonicalOD od(del_attrs[attr], attr);
 
-                    if (od.IsValid(data_, partition_cache_)) {
+                    if (od.IsValid(data_, partition_cache_, error_)) {
                         AddToResult(std::move(od));
                         CCPut(context, fastod::DeleteAttribute(cc, attr));
 
-                        const AttributeSet diff = fastod::Difference(schema_, context);
+                        AttributeSet const diff = fastod::Difference(schema_, context);
 
                         if (diff.Any()) {
                             CCPut(context, cc & (~diff));
@@ -181,8 +177,8 @@ void Fastod::ComputeODs() {
                     }
                 });
 
-        CalculateODs<false>(context, del_attrs);
-        CalculateODs<true>(context, del_attrs);
+        CalculateODs<od::Ordering::kDescending>(context, del_attrs);
+        CalculateODs<od::Ordering::kAscending>(context, del_attrs);
     }
 }
 
@@ -193,8 +189,9 @@ void Fastod::PruneLevels() {
 
     for (auto attribute_set_it = context_in_current_level_.begin();
          attribute_set_it != context_in_current_level_.end();) {
-        if (IsEmptySet(CCGet(*attribute_set_it)) && CSGet<true>(*attribute_set_it).empty() &&
-            CSGet<false>(*attribute_set_it).empty()) {
+        if (IsEmptySet(CCGet(*attribute_set_it)) &&
+            CSGet<od::Ordering::kAscending>(*attribute_set_it).empty() &&
+            CSGet<od::Ordering::kDescending>(*attribute_set_it).empty()) {
             context_in_current_level_.erase(attribute_set_it++);
         } else {
             ++attribute_set_it;
@@ -226,7 +223,7 @@ void Fastod::CalculateNextLevel() {
             for (size_t j = i + 1; j < single_attributes.size(); ++j) {
                 bool create_context = true;
 
-                const AttributeSet candidate = fastod::AddAttribute(
+                AttributeSet const candidate = fastod::AddAttribute(
                         fastod::AddAttribute(prefix, single_attributes[i]), single_attributes[j]);
 
                 candidate.Iterate([this, &candidate, &create_context](model::ColumnIndex attr) {
@@ -270,9 +267,9 @@ void Fastod::Discover() {
     timer_.Stop();
 
     if (IsComplete()) {
-        LOG(DEBUG) << "FastOD finished successfully";
+        LOG_DEBUG("FastOD finished successfully");
     } else {
-        LOG(DEBUG) << "FastOD finished with a time-out";
+        LOG_DEBUG("FastOD finished with a time-out");
     }
 
     PrintStatistics();

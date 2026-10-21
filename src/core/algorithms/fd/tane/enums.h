@@ -1,9 +1,18 @@
 #pragma once
 
-#include <enum.h>
+#include "core/util/export.h"
 
 namespace algos {
-BETTER_ENUM(PfdErrorMeasure, char, per_tuple = 0, per_value)
+enum class DESBORDANTE_EXPORT PfdErrorMeasure : char { kPerTuple = 0, kPerValue };
 
-BETTER_ENUM(AfdErrorMeasure, char, g1 = 0, pdep, tau, mu_plus, rho)
+enum class DESBORDANTE_EXPORT AfdErrorMeasure : char {
+    kG1 = 0,
+    kPdep,
+    kTau,
+    kMuPlus,
+    kRho,
+    kFi,
+    kG2,
+    kG3
+};
 }  // namespace algos

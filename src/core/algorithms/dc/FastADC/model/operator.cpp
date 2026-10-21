@@ -1,7 +1,7 @@
-#include "dc/FastADC/model/operator.h"
+#include "core/algorithms/dc/FastADC/model/operator.h"
 
-#include "model/types/builtin.h"
-#include "model/types/type.h"
+#include "core/model/types/builtin.h"
+#include "core/model/types/type.h"
 
 namespace algos::fastadc {
 
@@ -24,6 +24,10 @@ bool Operator::Eval(std::byte const* v1, std::byte const* v2, model::Type const&
         default:
             return false;
     }
+}
+
+size_t hash_value(Operator const& k) noexcept {
+    return static_cast<size_t>(k.GetType());
 }
 
 }  // namespace algos::fastadc

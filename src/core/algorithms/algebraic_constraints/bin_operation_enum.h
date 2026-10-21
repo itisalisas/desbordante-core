@@ -1,9 +1,13 @@
 #pragma once
 
-#include <enum.h>
+#include "core/util/export.h"
 
 namespace algos {
 
-BETTER_ENUM(Binop, char, Addition = '+', Subtraction = '-', Multiplication = '*', Division = '/');
-
+enum class DESBORDANTE_EXPORT Binop : char {
+    kAddition = '+',
+    kSubtraction = '-',
+    kMultiplication = '*',
+    kDivision = '/'
+};
 }  // namespace algos

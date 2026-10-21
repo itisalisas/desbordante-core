@@ -1,17 +1,15 @@
-#include "fd_mine.h"
+#include "core/algorithms/fd/fd_mine/fd_mine.h"
 
 #include <queue>
 #include <vector>
 
 #include <boost/unordered_map.hpp>
-#include <easylogging++.h>
+
+#include "core/util/logger.h"
 
 namespace algos {
 
 using boost::dynamic_bitset;
-
-FdMine::FdMine(std::optional<ColumnLayoutRelationDataManager> relation_manager)
-    : PliBasedFDAlgorithm({kDefaultPhaseName}, relation_manager) {}
 
 void FdMine::ResetStateFd() {
     candidate_set_.clear();
@@ -23,10 +21,9 @@ void FdMine::ResetStateFd() {
     plis_.clear();
 }
 
-unsigned long long FdMine::ExecuteInternal() {
+void FdMine::ExecuteInternal() {
     // 1
     schema_ = relation_->GetSchema();
-    auto start_time = std::chrono::system_clock::now();
 
     relation_indices_ = dynamic_bitset<>(schema_->GetNumColumns());
 
@@ -55,10 +52,6 @@ unsigned long long FdMine::ExecuteInternal() {
     // 3
     Reconstruct();
     Display();
-
-    auto elapsed_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - start_time);
-    return elapsed_milliseconds.count();
 }
 
 void FdMine::ComputeNonTrivialClosure(dynamic_bitset<> const& xi) {
@@ -212,9 +205,9 @@ void FdMine::Reconstruct() {
     dynamic_bitset<> generated_lhs_tmp(relation_indices_.size());
 
     for (auto const& [lhs, rhs] : fd_set_) {
-        std::unordered_map<dynamic_bitset<>, bool> observed;
+        std::unordered_set<dynamic_bitset<>> observed;
 
-        observed[lhs] = true;
+        observed.insert(lhs);
         auto rhs_copy = rhs;
         queue.push(lhs);
 
@@ -225,14 +218,14 @@ void FdMine::Reconstruct() {
                 }
             }
         }
-        bool rhs_will_not_change = false;
+        bool rhs_may_change = true;
 
         while (!queue.empty()) {
-            dynamic_bitset<> current_lhs = queue.front();
+            dynamic_bitset<> current_lhs = std::move(queue.front());
             queue.pop();
             size_t rhs_count = rhs_copy.count();
             for (auto const& [eq, eqset] : eq_set_) {
-                if (!rhs_will_not_change && eq.is_subset_of(rhs_copy)) {
+                if (rhs_may_change && eq.is_subset_of(rhs_copy)) {
                     for (auto const& eq_rhs : eqset) {
                         rhs_copy |= eq_rhs;
                     }
@@ -244,23 +237,23 @@ void FdMine::Reconstruct() {
                         generated_lhs = generated_lhs_tmp;
                         generated_lhs |= new_eq;
 
-                        if (!observed[generated_lhs]) {
+                        auto [it, is_new] = observed.emplace(generated_lhs);
+
+                        if (is_new) {
                             queue.push(generated_lhs);
-                            observed[generated_lhs] = true;
                         }
                     }
                 }
             }
             if (rhs_count == rhs_copy.count()) {
-                rhs_will_not_change = true;
+                rhs_may_change = false;
             }
         }
 
-        for (auto& [lhs, rbool] : observed) {
-            if (final_fd_set_.count(lhs)) {
-                final_fd_set_[lhs] |= rhs_copy;
-            } else {
-                final_fd_set_[lhs] = rhs_copy;
+        for (auto const& lhs : observed) {
+            auto [it, is_new] = final_fd_set_.try_emplace(lhs, rhs_copy);
+            if (!is_new) {
+                it->second |= rhs_copy;
             }
         }
     }
@@ -275,14 +268,14 @@ void FdMine::Display() {
                 continue;
             }
             Vertical lhs_vertical(schema_, lhs);
-            LOG(DEBUG) << "Discovered FD: " << lhs_vertical.ToString() << " -> "
-                       << schema_->GetColumn(j)->GetName();
+            LOG_DEBUG("Discovered FD: {} -> {}", lhs_vertical.ToString(),
+                      schema_->GetColumn(j)->GetName());
             RegisterFd(std::move(lhs_vertical), *schema_->GetColumn(j),
                        relation_->GetSharedPtrSchema());
             fd_counter++;
         }
     }
-    LOG(DEBUG) << "TOTAL FDs " << fd_counter;
+    LOG_DEBUG("TOTAL FDs: {}", fd_counter);
 }
 
 }  // namespace algos

@@ -1,7 +1,7 @@
-#include "dc/FastADC/util/dc_candidate_trie.h"
+#include "core/algorithms/dc/FastADC/util/dc_candidate_trie.h"
 
-#include "dc/FastADC/model/predicate.h"
-#include "dc/FastADC/util/dc_candidate.h"
+#include "core/algorithms/dc/FastADC/model/predicate.h"
+#include "core/algorithms/dc/FastADC/util/dc_candidate.h"
 
 namespace algos::fastadc {
 
@@ -30,8 +30,8 @@ std::vector<DCCandidate> DCCandidateTrie::GetAndRemoveGeneralizations(
         PredicateBitset const& superset) {
     std::vector<DCCandidate> removed;
 
-    boost::dynamic_bitset<> dynamic_superset(kPredicateBits);
-    for (size_t i = 0; i < kPredicateBits; ++i) {
+    boost::dynamic_bitset<> dynamic_superset(kMaxPredicateBits);
+    for (size_t i = 0; i < kMaxPredicateBits; ++i) {
         if (superset.test(i)) {
             dynamic_superset.set(i);
         }

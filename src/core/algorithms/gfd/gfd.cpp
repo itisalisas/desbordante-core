@@ -1,4 +1,4 @@
-#include "algorithms/gfd/gfd.h"
+#include "core/algorithms/gfd/gfd.h"
 
 #include <cstdlib>
 #include <sstream>
@@ -6,14 +6,14 @@
 
 #include <boost/graph/vf2_sub_graph_iso.hpp>
 
-#include "algorithms/gfd/comparator.h"
-#include "parser/graph_parser/graph_parser.h"
+#include "core/algorithms/gfd/comparator.h"
+#include "core/parser/graph_parser/graph_parser.h"
 
 namespace model {
 
 std::string model::Gfd::ToString() const {
     std::stringstream gfd_stream;
-    parser::graph_parser::WriteGfd(gfd_stream, *this);
+    parser::graph_parser::gfd::WriteGfd(gfd_stream, *this);
     return gfd_stream.str();
 }
 

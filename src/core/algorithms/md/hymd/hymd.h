@@ -4,15 +4,15 @@
 #include <memory>
 #include <vector>
 
-#include "algorithms/md/hymd/enums.h"
-#include "algorithms/md/hymd/indexes/records_info.h"
-#include "algorithms/md/hymd/lattice/md_lattice_node_info.h"
-#include "algorithms/md/hymd/preprocessing/column_matches/column_match.h"
-#include "algorithms/md/hymd/similarity_data.h"
-#include "algorithms/md/md_algorithm.h"
-#include "config/tabular_data/input_table_type.h"
-#include "config/thread_number/type.h"
-#include "model/table/relational_schema.h"
+#include "core/algorithms/md/hymd/enums.h"
+#include "core/algorithms/md/hymd/indexes/records_info.h"
+#include "core/algorithms/md/hymd/lattice/md_lattice_node_info.h"
+#include "core/algorithms/md/hymd/preprocessing/column_matches/column_match.h"
+#include "core/algorithms/md/hymd/similarity_data.h"
+#include "core/algorithms/md/md_algorithm.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/config/thread_number/type.h"
+#include "core/model/table/relational_schema.h"
 
 namespace algos::hymd {
 
@@ -63,7 +63,7 @@ private:
     bool prune_nondisjoint_ = true;
     std::size_t max_cardinality_ = -1;
     config::ThreadNumType threads_;
-    LevelDefinition level_definition_ = +LevelDefinition::cardinality;
+    LevelDefinition level_definition_ = LevelDefinition::kCardinality;
     // TODO: different level definitions (cardinality currently used)
     // TODO: comparing only some values during similarity calculation
     // TODO: automatically calculating minimal support
@@ -78,7 +78,7 @@ private:
 
     void MakeExecuteOptsAvailable() final;
     void ResetStateMd() final;
-    unsigned long long ExecuteInternal() final;
+    void ExecuteInternal() final;
 
     class RegisterHelper;
     void RegisterResults(SimilarityData const& similarity_data,

@@ -1,9 +1,11 @@
 #pragma once
 
-#include "algorithms/algorithm.h"
-#include "config/tabular_data/input_table_type.h"
-#include "model/table/column_layout_typed_relation_data.h"
-#include "nar.h"
+#include "core/algorithms/algorithm.h"
+#include "core/algorithms/nar/nar.h"
+#include "core/config/ar_minimum_conf/type.h"
+#include "core/config/ar_minimum_support/type.h"
+#include "core/config/tabular_data/input_table_type.h"
+#include "core/model/table/column_layout_typed_relation_data.h"
 
 namespace algos {
 
@@ -18,8 +20,8 @@ private:
 protected:
     std::vector<NAR> nar_collection_;
     std::unique_ptr<TypedRelation> typed_relation_;
-    double minsup_;
-    double minconf_;
+    config::ArMinimumSupportType minsup_;
+    config::ArMinimumConfidenceType minconf_;
 
     void LoadDataInternal() final;
     void MakeExecuteOptsAvailable() override;
@@ -30,7 +32,7 @@ public:
     };
 
     void ResetState() override;
-    explicit NARAlgorithm(std::vector<std::string_view> phase_names);
+    NARAlgorithm();
 };
 
 }  // namespace algos

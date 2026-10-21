@@ -1,13 +1,14 @@
-#include "nar_algorithm.h"
+#include "core/algorithms/nar/nar_algorithm.h"
 
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/tabular_data/input_table/option.h"
+#include "core/config/ar_minimum_conf/option.h"
+#include "core/config/ar_minimum_support/option.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/tabular_data/input_table/option.h"
 
 namespace algos {
 
-NARAlgorithm::NARAlgorithm(std::vector<std::string_view> phase_names)
-    : Algorithm(std::move(phase_names)) {
+NARAlgorithm::NARAlgorithm() : Algorithm() {
     using namespace config::names;
     RegisterOptions();
     MakeOptionsAvailable({kTable});
@@ -29,13 +30,13 @@ void NARAlgorithm::RegisterOptions() {
     DESBORDANTE_OPTION_USING;
 
     RegisterOption(config::kTableOpt(&input_table_));
-    RegisterOption(Option{&minconf_, kMinimumConfidence, kDMinimumConfidence, 0.0});
-    RegisterOption(Option{&minsup_, kMinimumSupport, kDMinimumSupport, 0.0});
+    RegisterOption(config::kArMinimumConfidenceOpt(&minconf_));
+    RegisterOption(config::kArMinimumSupportOpt(&minsup_));
 }
 
 void NARAlgorithm::MakeExecuteOptsAvailable() {
     using namespace config::names;
-    MakeOptionsAvailable({kMinimumSupport, kMinimumConfidence});
+    MakeOptionsAvailable({kArMinimumSupport, kArMinimumConfidence});
 }
 
 }  // namespace algos

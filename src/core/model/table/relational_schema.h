@@ -13,9 +13,9 @@
 #include <vector>
 
 #include <boost/dynamic_bitset.hpp>
-#include <boost/optional.hpp>
 
-#include "bitset_utils.h"
+#include "core/model/table/idataset_stream.h"
+#include "core/util/bitset_utils.h"
 
 class Column;
 
@@ -27,16 +27,14 @@ private:
     std::string name_;
 
 public:
-    std::unique_ptr<Vertical> empty_vertical_;
+    RelationalSchema(std::string name, std::vector<std::string> column_names);
 
-    RelationalSchema(std::string name);
+    static std::unique_ptr<RelationalSchema> CreateFrom(model::IDatasetStream& table);
 
     RelationalSchema(RelationalSchema const& other) = delete;
     RelationalSchema& operator=(RelationalSchema const& rhs) = delete;
-    RelationalSchema(RelationalSchema&& other) noexcept = default;
-    RelationalSchema& operator=(RelationalSchema&& rhs) noexcept = default;
-
-    void Init();
+    RelationalSchema(RelationalSchema&& other) noexcept = delete;
+    RelationalSchema& operator=(RelationalSchema&& rhs) noexcept = delete;
 
     std::string GetName() const {
         return name_;
@@ -53,17 +51,7 @@ public:
     size_t GetNumColumns() const;
     Vertical GetVertical(boost::dynamic_bitset<> indices) const;
 
-    void AppendColumn(std::string const& col_name);
-    void AppendColumn(Column column);
-
-    template <typename Container>
-    boost::dynamic_bitset<> IndicesToBitset(Container const& indices) const;
-    template <typename ForwardIt>
-    boost::dynamic_bitset<> IndicesToBitset(ForwardIt begin, ForwardIt end) const;
-
-    std::unordered_set<Vertical> CalculateHittingSet(
-            std::vector<Vertical> verticals,
-            boost::optional<std::function<bool(Vertical const&)>> pruning_function) const;
+    Vertical CreateEmptyVertical() const;
 
     ~RelationalSchema();
 
@@ -76,14 +64,4 @@ inline bool operator==(RelationalSchema const& l, RelationalSchema const& r) {
 
 inline bool operator!=(RelationalSchema const& l, RelationalSchema const& r) {
     return !(l == r);
-}
-
-template <typename Container>
-boost::dynamic_bitset<> RelationalSchema::IndicesToBitset(Container const& indices) const {
-    return util::IndicesToBitset(indices, GetNumColumns());
-}
-
-template <typename ForwardIt>
-boost::dynamic_bitset<> RelationalSchema::IndicesToBitset(ForwardIt begin, ForwardIt end) const {
-    return util::IndicesToBitset(begin, end, GetNumColumns());
 }

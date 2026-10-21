@@ -1,9 +1,9 @@
-#include "abstract_column_store.h"
+#include "core/algorithms/ind/faida/preprocessing/abstract_column_store.h"
 
 #include <fstream>
 
-#include "algorithms/ind/faida/hashing/hashing.h"
-#include "model/table/column.h"
+#include "core/algorithms/ind/faida/hashing/hashing.h"
+#include "core/model/table/column.h"
 
 namespace algos::faida {
 
@@ -14,12 +14,8 @@ void AbstractColumnStore::LoadData(std::string const& dataset_name, TableIndex t
         throw std::runtime_error("Got an empty file: IND mining is meaningless.");
     }
 
-    schema_ = std::make_unique<RelationalSchema>(input_data.GetRelationName());
-    for (ColumnIndex col_idx = 0; col_idx < num_columns; ++col_idx) {
-        auto column = Column(schema_.get(), input_data.GetColumnName(col_idx), col_idx);
-        schema_->AppendColumn(std::move(column));
-    }
-    schema_->Init();
+    schema_ = RelationalSchema::CreateFrom(input_data);
+
     column_properties_ =
             std::vector<ColumnProperty>(input_data.GetNumberOfColumns(), ColumnProperty::kOrdinary);
 

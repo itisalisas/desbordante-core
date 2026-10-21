@@ -1,13 +1,13 @@
-#include "validator.h"
+#include "core/algorithms/ucc/hyucc/validator.h"
 
 #include <future>
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 
-#include "fd/hycommon/efficiency_threshold.h"
-#include "fd/hycommon/validator_helpers.h"
-#include "ucc/hyucc/model/ucc_tree_vertex.h"
+#include "core/algorithms/fd/hycommon/efficiency_threshold.h"
+#include "core/algorithms/fd/hycommon/validator_helpers.h"
+#include "core/algorithms/ucc/hyucc/model/ucc_tree_vertex.h"
 
 namespace {
 
@@ -85,13 +85,13 @@ Validator::UCCValidations Validator::GetValidations(LhsPair const& vertex_and_uc
     bool is_unique;
     if (current_level_number_ == 1) {
         assert(ucc_attr != boost::dynamic_bitset<>::npos);
-        is_unique = (*plis_)[ucc_attr]->AllValuesAreUnique();
+        is_unique = (*plis_)[ucc_attr].AllValuesAreUnique();
     } else {
         ucc.reset(ucc_attr);
         // It's guaranteed that the first cluster has the fewest records because of sorting
         // in the Sampler
-        model::PLI const* pivot_pli = (*plis_)[ucc_attr];
-        is_unique = IsUnique(*pivot_pli, ucc, validations.ComparisonSuggestions());
+        model::PLI const& pivot_pli = (*plis_)[ucc_attr];
+        is_unique = IsUnique(pivot_pli, ucc, validations.ComparisonSuggestions());
         ucc.set(ucc_attr);
     }
 

@@ -1,28 +1,28 @@
-#include "algorithms/md/hymd/hymd.h"
+#include "core/algorithms/md/hymd/hymd.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <limits>
 
-#include "algorithms/md/hymd/lattice/cardinality/min_picking_level_getter.h"
-#include "algorithms/md/hymd/lattice/md_lattice.h"
-#include "algorithms/md/hymd/lattice/single_level_func.h"
-#include "algorithms/md/hymd/lattice_traverser.h"
-#include "algorithms/md/hymd/lowest_bound.h"
-#include "algorithms/md/hymd/lowest_cc_value_id.h"
-#include "algorithms/md/hymd/preprocessing/column_matches/levenshtein.h"
-#include "algorithms/md/hymd/record_pair_inferrer.h"
-#include "algorithms/md/hymd/similarity_data.h"
-#include "algorithms/md/hymd/utility/index_range.h"
-#include "algorithms/md/hymd/utility/inverse_permutation.h"
-#include "algorithms/md/hymd/utility/md_less.h"
-#include "config/names_and_descriptions.h"
-#include "config/option_using.h"
-#include "config/thread_number/option.h"
-#include "model/index.h"
-#include "model/table/column.h"
-#include "util/get_preallocated_vector.h"
-#include "util/worker_thread_pool.h"
+#include "core/algorithms/md/hymd/lattice/cardinality/min_picking_level_getter.h"
+#include "core/algorithms/md/hymd/lattice/md_lattice.h"
+#include "core/algorithms/md/hymd/lattice/single_level_func.h"
+#include "core/algorithms/md/hymd/lattice_traverser.h"
+#include "core/algorithms/md/hymd/lowest_bound.h"
+#include "core/algorithms/md/hymd/lowest_cc_value_id.h"
+#include "core/algorithms/md/hymd/preprocessing/column_matches/levenshtein.h"
+#include "core/algorithms/md/hymd/record_pair_inferrer.h"
+#include "core/algorithms/md/hymd/similarity_data.h"
+#include "core/algorithms/md/hymd/utility/index_range.h"
+#include "core/algorithms/md/hymd/utility/inverse_permutation.h"
+#include "core/algorithms/md/hymd/utility/md_less.h"
+#include "core/config/names_and_descriptions.h"
+#include "core/config/option_using.h"
+#include "core/config/thread_number/option.h"
+#include "core/model/index.h"
+#include "core/model/table/column.h"
+#include "core/util/get_preallocated_vector.h"
+#include "core/util/worker_thread_pool.h"
 
 namespace {
 using namespace algos::hymd;
@@ -50,9 +50,9 @@ lattice::SingleLevelFunc GetLevelDefinitionFunc(LevelDefinition definition_enum)
     // TODO: make infrastructure for depth level.
     // TODO: use depth level and validate several levels depending on thread number.
     switch (definition_enum) {
-        case +LevelDefinition::cardinality:
+        case LevelDefinition::kCardinality:
             return [](...) { return 1; };
-        case +LevelDefinition::lattice:
+        case LevelDefinition::kLattice:
             return {nullptr};
         default:
             DESBORDANTE_ASSUME(false);
@@ -62,7 +62,7 @@ lattice::SingleLevelFunc GetLevelDefinitionFunc(LevelDefinition definition_enum)
 
 namespace algos::hymd {
 
-HyMD::HyMD() : MdAlgorithm({}) {
+HyMD::HyMD() : MdAlgorithm() {
     using namespace config::names;
     RegisterOptions();
     MakeOptionsAvailable({kLeftTable, kRightTable});
@@ -148,29 +148,19 @@ void HyMD::RegisterOptions() {
                           std::numeric_limits<std::size_t>::max()});
     RegisterOption(config::kThreadNumberOpt(&threads_));
     RegisterOption(Option{&level_definition_, kLevelDefinition, kDLevelDefinition,
-                          +LevelDefinition::cardinality});
+                          LevelDefinition::kCardinality});
 }
 
 void HyMD::ResetStateMd() {}
 
 void HyMD::LoadDataInternal() {
-    left_schema_ = std::make_shared<RelationalSchema>(left_table_->GetRelationName());
-    std::size_t const left_table_cols = left_table_->GetNumberOfColumns();
-    for (Index i : utility::IndexRange(left_table_cols)) {
-        left_schema_->AppendColumn(left_table_->GetColumnName(i));
-    }
+    left_schema_ = RelationalSchema::CreateFrom(*left_table_);
 
     if (right_table_ == nullptr) {
         right_schema_ = left_schema_;
-
         records_info_ = indexes::RecordsInfo::CreateFrom(*left_table_);
     } else {
-        right_schema_ = std::make_unique<RelationalSchema>(right_table_->GetRelationName());
-        std::size_t const right_table_cols = right_table_->GetNumberOfColumns();
-        for (Index i : utility::IndexRange(right_table_cols)) {
-            right_schema_->AppendColumn(right_table_->GetColumnName(i));
-        }
-
+        right_schema_ = RelationalSchema::CreateFrom(*right_table_);
         records_info_ = indexes::RecordsInfo::CreateFrom(*left_table_, *right_table_);
     }
 
@@ -180,18 +170,14 @@ void HyMD::LoadDataInternal() {
     }
 }
 
-unsigned long long HyMD::ExecuteInternal() {
-    auto const start_time = std::chrono::system_clock::now();
-
+void HyMD::ExecuteInternal() {
     auto pool_holder = threads_ > 1 ? PoolHolder{threads_} : PoolHolder{};
 
     auto [similarity_data, short_sampling_enable] = SimilarityData::CreateFrom(
             records_info_.get(), column_matches_option_, pool_holder.GetPtr());
     if (similarity_data.GetColumnMatchNumber() == 0) {
         RegisterResults(similarity_data, {});
-        return std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::system_clock::now() - start_time)
-                .count();
+        return;
     }
 
     lattice::MdLattice lattice{GetLevelDefinitionFunc(level_definition_),
@@ -218,10 +204,6 @@ unsigned long long HyMD::ExecuteInternal() {
     }
 
     RegisterResults(similarity_data, lattice.GetAll());
-
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() -
-                                                                 start_time)
-            .count();
 }
 
 // Only serves to name parts of HyMD::RegisterResults.

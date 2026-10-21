@@ -1,4 +1,6 @@
-#include "lattice_vertex.h"
+#include "core/algorithms/fd/tane/model/lattice_vertex.h"
+
+#include "core/util/getting_ptr.h"
 
 namespace model {
 
@@ -66,11 +68,8 @@ std::ostream& operator<<(std::ostream& os, LatticeVertex& lv) {
 }
 
 PositionListIndex const* LatticeVertex::GetPositionListIndex() const {
-    if (std::holds_alternative<std::unique_ptr<PositionListIndex>>(position_list_index_)) {
-        return std::get<std::unique_ptr<PositionListIndex>>(position_list_index_).get();
-    } else {
-        return std::get<PositionListIndex const*>(position_list_index_);
-    }
+    return std::visit([](auto&& ptr) -> PositionListIndex const* { return util::GetPointer(ptr); },
+                      position_list_index_);
 }
 
 }  // namespace model

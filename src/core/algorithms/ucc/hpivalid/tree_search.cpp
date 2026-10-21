@@ -1,4 +1,4 @@
-#include "algorithms/ucc/hpivalid/tree_search.h"
+#include "core/algorithms/ucc/hpivalid/tree_search.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -10,11 +10,10 @@
 #include <utility>
 #include <vector>
 
-#include <easylogging++.h>
-
-#include "algorithms/ucc/hpivalid/config.h"
-#include "algorithms/ucc/hpivalid/pli_table.h"
-#include "algorithms/ucc/hpivalid/result_collector.h"
+#include "core/algorithms/ucc/hpivalid/config.h"
+#include "core/algorithms/ucc/hpivalid/pli_table.h"
+#include "core/algorithms/ucc/hpivalid/result_collector.h"
+#include "core/util/logger.h"
 
 // see algorithms/ucc/hpivalid/LICENSE
 
@@ -36,7 +35,6 @@ TreeSearch::TreeSearch(PLITable const& tab, Config const& cfg, ResultCollector& 
 }
 
 void TreeSearch::Run() {
-    rc_.StartTimer(timer::TimerName::sample_diff_sets);
     for (auto const& pli : tab_.plis) {
         Hypergraph gen = Sample(pli);
         for (Edge const& e : gen) {
@@ -44,7 +42,6 @@ void TreeSearch::Run() {
         }
     }
     rc_.StopInitialSampling();
-    rc_.StopTimer(timer::TimerName::sample_diff_sets);
 
     // S, CAND
     Edge s(partial_hg_.NumVertices());
@@ -66,14 +63,14 @@ void TreeSearch::Run() {
         }
     }
 
-    std::vector<std::vector<Edgemark>> removed_criticals_stack;
+    std::vector<std::vector<Edgemark>> removed_critical_stack;
 
     // intersections
     std::stack<std::deque<model::PLI::Cluster>> intersection_stack;
     std::deque<Edge::size_type> tointersect_queue;
 
     // Searching
-    // find edge from uncov with smallest intersecton C with CAND
+    // find edge from uncov with smallest intersection C with CAND
     Edge c = partial_hg_[uncov.find_first()] & cand;
     for (Edge::size_type i_e = uncov.find_next(uncov.find_first()); i_e != Edge::npos;
          i_e = uncov.find_next(i_e)) {
@@ -87,28 +84,28 @@ void TreeSearch::Run() {
     try {
         for (Edge::size_type v = c.find_first(); v != Edge::npos; v = c.find_next(v)) {
             // update crit and uncov
-            UpdateCritAndUncov(removed_criticals_stack, crit, uncov, vertexhittings[v]);
+            UpdateCritAndUncov(removed_critical_stack, crit, uncov, vertexhittings[v]);
 
             // branch
             s.set(v);
             intersection_stack.push(tab_.plis[v]);
-            ExtendOrConfirmS(s, cand, crit, uncov, vertexhittings, removed_criticals_stack,
+            ExtendOrConfirmS(s, cand, crit, uncov, vertexhittings, removed_critical_stack,
                              intersection_stack, tointersect_queue);
             intersection_stack.pop();
             s.reset(v);
 
             // reset update of crit and uncov
-            RestoreCritAndUncov(removed_criticals_stack, crit, uncov);
+            RestoreCritAndUncov(removed_critical_stack, crit, uncov);
 
             // update CAND
             cand.set(v);
         }
         // report final hypergraph
-        LOG(DEBUG) << "Final hypergraph:";
+        LOG_DEBUG("Final hypergraph:");
         rc_.FinalHypergraph(partial_hg_);
     } catch (unsigned timeout) {
         // report current partial hypergraph
-        LOG(DEBUG) << "Current partial hypergraph:";
+        LOG_DEBUG("Current partial hypergraph:");
         rc_.FinalHypergraph(partial_hg_);
     }
 }
@@ -207,14 +204,14 @@ Hypergraph TreeSearch::Sample(std::deque<model::PLI::Cluster> const& pli) {
 }
 
 inline void TreeSearch::UpdateCritAndUncov(
-        std::vector<std::vector<Edgemark>>& removed_criticals_stack, std::vector<Edgemark>& crit,
+        std::vector<std::vector<Edgemark>>& removed_critical_stack, std::vector<Edgemark>& crit,
         Edgemark& uncov, Edgemark const& v_hittings) const {
     // update crit[] for vertices in S and put changes on stack
 
-    removed_criticals_stack.emplace_back(crit.size());
+    removed_critical_stack.emplace_back(crit.size());
 
     for (std::vector<Edgemark>::size_type i = 0; i < crit.size(); ++i) {
-        removed_criticals_stack.back()[i] = crit[i] & v_hittings;
+        removed_critical_stack.back()[i] = crit[i] & v_hittings;
         crit[i] -= v_hittings;
     }
 
@@ -225,22 +222,22 @@ inline void TreeSearch::UpdateCritAndUncov(
 }
 
 inline void TreeSearch::RestoreCritAndUncov(
-        std::vector<std::vector<Edgemark>>& removed_criticals_stack, std::vector<Edgemark>& crit,
+        std::vector<std::vector<Edgemark>>& removed_critical_stack, std::vector<Edgemark>& crit,
         Edgemark& uncov) const {
     uncov |= crit.back();
     crit.pop_back();
 
     for (std::vector<Edgemark>::size_type i = 0; i < crit.size(); ++i) {
-        crit[i] |= removed_criticals_stack.back()[i];
+        crit[i] |= removed_critical_stack.back()[i];
     }
 
-    removed_criticals_stack.pop_back();
+    removed_critical_stack.pop_back();
 }
 
 inline bool TreeSearch::ExtendOrConfirmS(
         Edge& s, Edge& cand, std::vector<Edgemark>& crit, Edgemark& uncov,
         std::vector<Edgemark>& vertexhittings,
-        std::vector<std::vector<Edgemark>>& removed_criticals_stack,
+        std::vector<std::vector<Edgemark>>& removed_critical_stack,
         std::stack<std::deque<model::PLI::Cluster>>& intersection_stack,
         std::deque<Edge::size_type>& tointersect_queue) {
     rc_.CountTreeNode();
@@ -248,15 +245,13 @@ inline bool TreeSearch::ExtendOrConfirmS(
         PullUpIntersections(intersection_stack, tointersect_queue);
 
         if (intersection_stack.top().empty()) {
-            if (!rc_.UCCFound(s)) {
-                // timeout
-                throw timeout_;
-            }
+            rc_.AddUCC(s);
+            if (rc_.TimedOut()) throw timeout_;
             return false;
         }
 
         // gain new edges and minimize
-        UpdateEdges(crit, uncov, vertexhittings, removed_criticals_stack, intersection_stack.top());
+        UpdateEdges(crit, uncov, vertexhittings, removed_critical_stack, intersection_stack.top());
 
         // check if minimality still holds
         if (!SFulfillsMinimalityCondition(crit)) {
@@ -264,7 +259,7 @@ inline bool TreeSearch::ExtendOrConfirmS(
         }
     }
 
-    // find edge from uncov with smallest intersecton C with CAND
+    // find edge from uncov with smallest intersection C with CAND
     rc_.CountTreeComplexity(uncov.count());
     Edge c = partial_hg_[uncov.find_first()] & cand;
     for (Edge::size_type i_e = uncov.find_next(uncov.find_first()); i_e != Edge::npos;
@@ -285,11 +280,11 @@ inline bool TreeSearch::ExtendOrConfirmS(
         }
 
         // branch
-        UpdateCritAndUncov(removed_criticals_stack, crit, uncov, vertexhittings[v]);
+        UpdateCritAndUncov(removed_critical_stack, crit, uncov, vertexhittings[v]);
 
         s.set(v);
         tointersect_queue.push_back(v);
-        bool check = ExtendOrConfirmS(s, cand, crit, uncov, vertexhittings, removed_criticals_stack,
+        bool check = ExtendOrConfirmS(s, cand, crit, uncov, vertexhittings, removed_critical_stack,
                                       intersection_stack, tointersect_queue);
         if (tointersect_queue.empty()) {
             intersection_stack.pop();
@@ -297,7 +292,7 @@ inline bool TreeSearch::ExtendOrConfirmS(
             tointersect_queue.pop_back();
         }
         s.reset(v);
-        RestoreCritAndUncov(removed_criticals_stack, crit, uncov);
+        RestoreCritAndUncov(removed_critical_stack, crit, uncov);
 
         // prove if deeper update of edges destroyed minimality condition
         if (check && !SFulfillsMinimalityCondition(crit)) {
@@ -322,14 +317,12 @@ inline bool TreeSearch::ExtendOrConfirmS(
 inline void TreeSearch::PullUpIntersections(
         std::stack<std::deque<model::PLI::Cluster>>& intersection_stack,
         std::deque<Edge::size_type>& tointersect_queue) {
-    rc_.StartTimer(timer::TimerName::cluster_intersect);
     while (!tointersect_queue.empty()) {
         intersection_stack.push(IntersectClusterListAndClusterMapping(
                 intersection_stack.top(), tab_.inverse_mapping[tointersect_queue.front()]));
 
         tointersect_queue.pop_front();
     }
-    rc_.StopTimer(timer::TimerName::cluster_intersect);
 }
 
 std::deque<model::PLI::Cluster> TreeSearch::IntersectClusterListAndClusterMapping(
@@ -364,12 +357,10 @@ std::deque<model::PLI::Cluster> TreeSearch::IntersectClusterListAndClusterMappin
 
 inline void TreeSearch::UpdateEdges(std::vector<Edgemark>& crit, Edgemark& uncov,
                                     std::vector<Edgemark>& vertexhittings,
-                                    std::vector<std::vector<Edgemark>>& removed_criticals_stack,
+                                    std::vector<std::vector<Edgemark>>& removed_critical_stack,
                                     std::deque<model::PLI::Cluster> const& pli) {
     // sample new edges
-    rc_.StartTimer(timer::TimerName::sample_diff_sets);
     Hypergraph new_edges = Sample(pli);
-    rc_.StopTimer(timer::TimerName::sample_diff_sets);
 
     // find out which edges are supersets and therefore can be removed and save
     // indices in descending order
@@ -387,7 +378,7 @@ inline void TreeSearch::UpdateEdges(std::vector<Edgemark>& crit, Edgemark& uncov
     }
 
     // remove these edges from difference_graph, vertexhittings, uncov, crit,
-    // removed_criticals
+    // removed_critical
 
     for (std::vector<Edge>::size_type i_e : supsets_indices) {
         // difference_graph
@@ -410,9 +401,9 @@ inline void TreeSearch::UpdateEdges(std::vector<Edgemark>& crit, Edgemark& uncov
             em_crit.pop_back();
         }
 
-        // removed_criticals
-        for (auto& removed_criticals : removed_criticals_stack) {
-            for (auto& removed : removed_criticals) {
+        // removed_critical
+        for (auto& removed_critical : removed_critical_stack) {
+            for (auto& removed : removed_critical) {
                 removed[i_e] = removed[removed.size() - 1];
                 removed.pop_back();
             }
@@ -420,7 +411,7 @@ inline void TreeSearch::UpdateEdges(std::vector<Edgemark>& crit, Edgemark& uncov
     }
 
     // insert the new edges in difference_graph, vertexhittings, uncov, crit,
-    // removed_criticals
+    // removed_critical
 
     // difference graph
     for (Edge const& e : new_edges) {
@@ -447,9 +438,9 @@ inline void TreeSearch::UpdateEdges(std::vector<Edgemark>& crit, Edgemark& uncov
         em.resize(partial_hg_.NumEdges());
     }
 
-    // removed_criticals
-    for (auto& removed_criticals : removed_criticals_stack) {
-        for (auto& removed : removed_criticals) {
+    // removed_critical
+    for (auto& removed_critical : removed_critical_stack) {
+        for (auto& removed : removed_critical) {
             removed.resize(partial_hg_.NumEdges());
         }
     }
